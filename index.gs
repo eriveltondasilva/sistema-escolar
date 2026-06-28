@@ -838,12 +838,22 @@ function createSchoolYear_(ui) {
     }
   }
 
-  let message = `Ano letivo "${schoolYearLabel}" criado com ${createdClasses.length} turma(s): ${createdClasses.join(", ")}.`;
   if (errors.length > 0) {
-    message += `\n\nErros:\n${errors.join("\n")}`;
+    // Desfaz a criação para não deixar a pasta do ano num estado parcial:
+    // sem isso, uma nova tentativa para o mesmo ano seria bloqueada pela
+    // checagem "já existe" acima, mesmo com turmas faltando e sem nenhuma
+    // forma de retomar ou completar pelo menu.
+    yearFolder.setTrashed(true);
+    ui.alert(
+      `Não foi possível criar o ano letivo "${schoolYearLabel}". Nenhuma alteração foi feita.\n\n` +
+        `Erros:\n${errors.join("\n")}`,
+    );
+    return;
   }
 
-  ui.alert(message);
+  ui.alert(
+    `Ano letivo "${schoolYearLabel}" criado com ${createdClasses.length} turma(s): ${createdClasses.join(", ")}.`,
+  );
 }
 
 /**
@@ -983,12 +993,13 @@ function generateStudentReport_(ui) {
       return;
     }
 
-    const context = buildReportContext({
+    const context = buildSingleStudentReportContext({
       config,
       classSpreadsheet,
       schoolYearLabel,
       className,
       foundSubjects,
+      studentId,
     });
     const pdfUrl = generateReportForStudent({
       studentId,
@@ -1173,6 +1184,172 @@ function buildReportContext({
 }
 
 /**
+ * Versão mais leve de `buildReportContext` para gerar o boletim de UM único
+ * aluno: em vez de carregar o cadastro inteiro da escola (Alunos,
+ * Responsáveis) e todas as linhas de cada disciplina da turma — útil quando
+ * se está gerando para todos os alunos de uma vez —, busca diretamente pela
+ * matrícula em cada planilha, lendo só a linha necessária.
+ *
+ * @param {Object} params
+ * @param {AppConfig} params.config
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} params.classSpreadsheet
+ * @param {string} params.schoolYearLabel
+ * @param {string} params.className
+ * @param {Subject[]} params.foundSubjects
+ * @param {string} params.studentId
+ * @returns {ReportContext}
+ */
+function buildSingleStudentReportContext({
+  config,
+  classSpreadsheet,
+  schoolYearLabel,
+  className,
+  foundSubjects,
+  studentId,
+}) {
+  const yearNumber = extractYearNumber(schoolYearLabel);
+  const registrationSheet = SpreadsheetApp.openById(
+    config.studentsSpreadsheetId,
+  );
+
+  return {
+    yearNumber,
+    templateFile: getReportTemplateFile(config),
+    tempFolder: DriveApp.getFolderById(config.tempFolderId),
+    pdfFolder: getOrCreateClassPdfFolder(config, yearNumber, className),
+    studentsMap: loadSingleStudentMap(registrationSheet, studentId),
+    guardiansMap: loadSingleStudentGuardiansMap(registrationSheet, studentId),
+    gradesBySubject: loadGradesForSingleStudent(
+      classSpreadsheet,
+      foundSubjects,
+      studentId,
+    ),
+  };
+}
+
+/**
+ * Busca um único aluno na aba "Alunos" pela matrícula, sem ler a planilha
+ * inteira do Cadastro. Devolve a mesma estrutura de `loadStudentsMap`
+ * (com no máximo uma entrada), para ser usado por `getPersonalData`.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} registrationSheet
+ * @param {string} studentId
+ * @returns {Map<string, StudentData>}
+ */
+function loadSingleStudentMap(registrationSheet, studentId) {
+  const studentsSheet = registrationSheet.getSheetByName(SHEET_NAMES.STUDENTS);
+  if (!studentsSheet) {
+    throw new Error(
+      `Cadastro de Alunos: a aba "${SHEET_NAMES.STUDENTS}" não existe.`,
+    );
+  }
+
+  const map = new Map();
+  const lastRow = studentsSheet.getLastRow();
+  if (lastRow < 2) return map;
+
+  const match = studentsSheet
+    .getRange(2, STUDENT_COLUMNS.id + 1, lastRow - 1, 1)
+    .createTextFinder(studentId)
+    .matchEntireCell(true)
+    .findNext();
+  if (!match) return map;
+
+  const row = studentsSheet
+    .getRange(match.getRow(), 1, 1, studentsSheet.getLastColumn())
+    .getValues()[0];
+
+  map.set(studentId, {
+    name: String(row[STUDENT_COLUMNS.name] ?? "").trim(),
+    address: row[STUDENT_COLUMNS.address],
+    nationality: row[STUDENT_COLUMNS.nationality],
+    birthDate: formatLongDate(row[STUDENT_COLUMNS.birthDate]),
+    sex: row[STUDENT_COLUMNS.sex],
+  });
+
+  return map;
+}
+
+/**
+ * Busca os responsáveis de um único aluno na aba "Responsáveis" pela
+ * matrícula, sem ler a planilha inteira do Cadastro.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} registrationSheet
+ * @param {string} studentId
+ * @returns {Map<string, string[]>}
+ */
+function loadSingleStudentGuardiansMap(registrationSheet, studentId) {
+  const guardiansSheet = registrationSheet.getSheetByName(
+    SHEET_NAMES.GUARDIANS,
+  );
+  const map = new Map();
+  if (!guardiansSheet) return map;
+
+  const lastRow = guardiansSheet.getLastRow();
+  if (lastRow < 2) return map;
+
+  const matches = guardiansSheet
+    .getRange(2, GUARDIAN_COLUMNS.studentId + 1, lastRow - 1, 1)
+    .createTextFinder(studentId)
+    .matchEntireCell(true)
+    .findAll();
+
+  const names = matches.map((cell) =>
+    guardiansSheet
+      .getRange(cell.getRow(), GUARDIAN_COLUMNS.name + 1, 1, 1)
+      .getValue(),
+  );
+
+  if (names.length > 0) map.set(studentId, names);
+  return map;
+}
+
+/**
+ * Carrega as notas de um único aluno em cada disciplina da turma, lendo
+ * apenas a linha correspondente em cada aba (em vez da aba inteira).
+ * Devolve o mesmo formato de `loadGradesBySubject` (mapa por disciplina ->
+ * mapa por matrícula -> linha), para ser consumido por `getGradesForStudent`
+ * sem nenhuma alteração.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
+ * @param {Subject[]} foundSubjects
+ * @param {string} studentId
+ * @returns {Map<string, Map<string, any[]>>}
+ */
+function loadGradesForSingleStudent(
+  classSpreadsheet,
+  foundSubjects,
+  studentId,
+) {
+  const map = new Map();
+
+  for (const subject of foundSubjects) {
+    const sheet = findSubjectSheet(classSpreadsheet, subject);
+    const byStudentId = new Map();
+
+    const lastRow = sheet?.getLastRow() ?? 0;
+    if (sheet && lastRow >= FIRST_DATA_ROW) {
+      const match = sheet
+        .getRange(FIRST_DATA_ROW, 1, lastRow - FIRST_DATA_ROW + 1, 1)
+        .createTextFinder(studentId)
+        .matchEntireCell(true)
+        .findNext();
+
+      if (match) {
+        const rowValues = sheet
+          .getRange(match.getRow(), 1, 1, GRADE_COLUMNS_COUNT)
+          .getValues()[0];
+        byStudentId.set(studentId, rowValues);
+      }
+    }
+
+    map.set(subject.name, byStudentId);
+  }
+
+  return map;
+}
+
+/**
  * @param {Object} params
  * @param {string} params.studentId
  * @param {string} params.className
@@ -1353,12 +1530,19 @@ function findRowByStudentId(classSpreadsheet, studentId, foundSubjects) {
 
 /**
  * Substitui um termo (placeholder) pelo valor dentro do corpo do documento.
- * * @param {GoogleAppsScript.Document.Body} body
+ *
+ * O `Body.replaceText` usa a biblioteca RE2 do Google, que também interpreta
+ * "$" no texto de substituição como referência a grupo de captura (ex: "$1").
+ * Como o valor pode vir de dados digitados na planilha (nome, endereço etc.),
+ * escapamos "$" para garantir que ele sempre apareça como texto literal.
+ *
+ * @param {GoogleAppsScript.Document.Body} body
  * @param {string} key
  * @param {string | null | undefined} value
  */
 function replacePlaceholder(body, key, value) {
-  body.replaceText("{{" + key + "}}", value ?? "");
+  const safeValue = String(value ?? "").replace(/\$/g, "$$$$");
+  body.replaceText("{{" + key + "}}", safeValue);
 }
 
 /**
