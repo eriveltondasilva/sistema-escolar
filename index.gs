@@ -971,7 +971,11 @@ function generateStudentReport_(ui) {
       return;
     }
 
-    const rowNumber = findRowByStudentId(classSpreadsheet, studentId, found);
+    const rowNumber = findRowByStudentId(
+      classSpreadsheet,
+      studentId,
+      foundSubjects,
+    );
     if (rowNumber === null) {
       ui.alert(
         `Matrícula ${studentId} não encontrada na turma "${className}" (${schoolYearLabel}).`,
@@ -988,7 +992,6 @@ function generateStudentReport_(ui) {
     });
     const pdfUrl = generateReportForStudent({
       studentId,
-      rowNumber,
       className,
       foundSubjects,
       context,
@@ -1111,7 +1114,6 @@ function generateClassReports_(ui) {
     try {
       generateReportForStudent({
         studentId: String(studentId),
-        rowNumber,
         className,
         foundSubjects,
         context,
@@ -1173,7 +1175,6 @@ function buildReportContext({
 /**
  * @param {Object} params
  * @param {string} params.studentId
- * @param {number} params.rowNumber
  * @param {string} params.className
  * @param {Subject[]} params.foundSubjects
  * @param {ReportContext} params.context
@@ -1181,13 +1182,12 @@ function buildReportContext({
  */
 function generateReportForStudent({
   studentId,
-  rowNumber,
   className,
   foundSubjects,
   context,
 }) {
   const personalData = getPersonalData(studentId, context);
-  const gradesData = getGradesForRow(rowNumber, foundSubjects, context);
+  const gradesData = getGradesForStudent(studentId, foundSubjects, context);
 
   const fileName = `${studentId}_${personalData.name.replace(/\s+/g, "_").toLowerCase()}`;
 
@@ -1263,7 +1263,7 @@ function getPersonalData(studentId, context) {
 /**
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
  * @param {Subject[]} foundSubjects
- * @returns {Map<string, any[][]>}
+ * @returns {Map<string, Map<string, any[]>>}
  */
 function loadGradesBySubject(classSpreadsheet, foundSubjects) {
   const map = new Map();
@@ -1285,24 +1285,33 @@ function loadGradesBySubject(classSpreadsheet, foundSubjects) {
             .getValues()
         : [];
 
-    map.set(subject.name, rows);
+    // column 0 holds the student ID, just like "Resumo" — indexing by it
+    // (instead of by row position) avoids assigning a student's grades to
+    // a different student if a subject sheet ever gets sorted, has a row
+    // added/removed, or otherwise loses alignment with the other sheets.
+    const byStudentId = new Map(
+      rows
+        .map((row) => [String(row[0] ?? "").trim(), row])
+        .filter(([studentId]) => studentId.length > 0),
+    );
+
+    map.set(subject.name, byStudentId);
   }
 
   return map;
 }
 
 /**
- * @param {number} rowNumber
+ * @param {string} studentId
  * @param {Subject[]} foundSubjects
  * @param {ReportContext} context
  * @returns {Record<string, Object | null>}
  */
-function getGradesForRow(rowNumber, foundSubjects, context) {
+function getGradesForStudent(studentId, foundSubjects, context) {
   const result = {};
 
   for (const subject of foundSubjects) {
-    const rows = context.gradesBySubject.get(subject.name);
-    const rowValues = rows?.[rowNumber - FIRST_DATA_ROW];
+    const rowValues = context.gradesBySubject.get(subject.name)?.get(studentId);
 
     result[subject.name] = rowValues
       ? Object.fromEntries(
