@@ -4,7 +4,7 @@
  */
 
 // ============================================================
-// TIPOS
+// DEFINIÇÕES DE TIPOS (JSDOC)
 // ============================================================
 
 /**
@@ -24,7 +24,7 @@
  */
 
 /**
- * @typedef {Object} Student
+ * @typedef {Object} StudentData
  * @property {string} name
  * @property {string} address
  * @property {string} nationality
@@ -33,7 +33,12 @@
  */
 
 /**
- * @typedef {Student} PersonalData
+ * @typedef {Object} PersonalData
+ * @property {string} name
+ * @property {string} address
+ * @property {string} nationality
+ * @property {string} birthDate
+ * @property {string} sex
  * @property {string} guardianNames
  */
 
@@ -43,9 +48,16 @@
  * @property {GoogleAppsScript.Drive.File} templateFile
  * @property {GoogleAppsScript.Drive.Folder} tempFolder
  * @property {GoogleAppsScript.Drive.Folder} pdfFolder
- * @property {Map<string, Student>} studentsMap
+ * @property {Map<string, StudentData>} studentsMap
  * @property {Map<string, string[]>} guardiansMap
  * @property {Map<string, any[][]>} gradesBySubject
+ */
+
+/**
+ * @typedef {Object} PlaceholderField
+ * @property {string} suffix
+ * @property {string} field
+ * @property {(value: any) => string} format
  */
 
 // ============================================================
@@ -62,8 +74,10 @@ const CONFIG_START_ROW = 4;
 
 const GRADE_COLUMNS_COUNT = 17;
 
+/** @type {string[]} */
 const VALID_CLASSES = ["6º Ano", "7º Ano", "8º Ano", "9º Ano"];
 
+/** @type {Subject[]} */
 const VALID_SUBJECTS = [
   { name: "Arte", code: "ART" },
   { name: "Ciências", code: "CIE" },
@@ -91,20 +105,20 @@ const SHEET_NAMES = {
   SUMMARY: "Resumo",
 };
 
-// Colunas da aba "Alunos" (0-indexed) — confirme contra a planilha "Cadastro de Alunos"
+// Colunas da aba "Alunos" (0-indexed)
 const STUDENT_COLUMNS = {
-  id: 0, // Matriculas
-  name: 1, // Nome completo
-  address: 2, // Endereço
-  nationality: 3, // Nacionalidade
-  birthDate: 4, // Data de Nasc.
-  sex: 5, // Sexo
+  id: 0,
+  name: 1,
+  address: 2,
+  nationality: 3,
+  birthDate: 4,
+  sex: 5,
 };
 
 // Colunas da aba "Responsáveis" (0-indexed)
 const GUARDIAN_COLUMNS = {
-  studentId: 0, // Matriculas
-  name: 1, // Nome Completo
+  studentId: 0,
+  name: 1,
 };
 
 // Colunas da planilha de notas por disciplina (0-indexed dentro da linha)
@@ -126,6 +140,7 @@ const GRADE_COLUMNS = {
   status: 16,
 };
 
+/** @type {PlaceholderField[]} */
 const SUBJECT_PLACEHOLDER_FIELDS = [
   { suffix: "nota1", field: "grade1Q", format: formatGrade },
   { suffix: "falt1", field: "absences1Q", format: formatValue },
@@ -147,8 +162,9 @@ const SUBJECT_PLACEHOLDER_FIELDS = [
 // ---
 
 /**
- * @return {AppConfig}
- * @throws {Error} Se faltarem chaves na configuração
+ * Lê e valida as configurações da aba "Configuração".
+ * * @returns {AppConfig}
+ * @throws {Error} Se a aba não for encontrada ou faltarem configurações.
  */
 function loadConfig() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -209,10 +225,8 @@ function onOpen() {
 
 /**
  * Encontra a aba de uma disciplina na planilha de turma.
- *
- * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
+ * * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
  * @param {Subject} subject
- *
  * @returns {GoogleAppsScript.Spreadsheet.Sheet | null}
  */
 function findSubjectSheet(classSpreadsheet, subject) {
@@ -223,8 +237,9 @@ function findSubjectSheet(classSpreadsheet, subject) {
 }
 
 /**
- * Confere quais disciplinas esperadas existem como aba na planilha de turma
- * (por nome completo ou por code).
+ * Confere quais disciplinas esperadas existem como aba na planilha de turma.
+ * * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
+ * @returns {{found: Subject[], missing: string[]}}
  */
 function checkClassSubjects(classSpreadsheet) {
   return VALID_SUBJECTS.reduce(
@@ -241,8 +256,9 @@ function checkClassSubjects(classSpreadsheet) {
 }
 
 /**
- * Lê todos os alunos (matrícula + nome) da aba "Resumo" de uma planilha de turma,
- * a partir de FIRST_DATA_ROW, ignorando linhas sem matrícula.
+ * Lê todos os alunos (matrícula + nome) da aba "Resumo".
+ * * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
+ * @returns {Array<{studentId: string, name: string, row: number}>}
  */
 function getClassStudentsFromResumo(classSpreadsheet) {
   const resumoSheet = classSpreadsheet.getSheetByName(SHEET_NAMES.SUMMARY);
@@ -265,10 +281,9 @@ function getClassStudentsFromResumo(classSpreadsheet) {
 }
 
 /**
- * Lê a aba "Alunos" do Cadastro.
- *
- * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} registrationSheet
- * @returns {Map<string, Student>}
+ * Lê a aba "Alunos" do Cadastro e devolve um mapa.
+ * * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} registrationSheet
+ * @returns {Map<string, StudentData>}
  */
 function loadStudentsMap(registrationSheet) {
   const studentsSheet = registrationSheet.getSheetByName(SHEET_NAMES.STUDENTS);
@@ -279,8 +294,9 @@ function loadStudentsMap(registrationSheet) {
   }
 
   const rows = studentsSheet.getDataRange().getValues().slice(1);
-
+  /** @type {Map<string, StudentData>} */
   const map = new Map();
+
   for (const row of rows) {
     const studentId = String(row[STUDENT_COLUMNS.id] ?? "").trim();
     if (!studentId) continue;
@@ -298,8 +314,9 @@ function loadStudentsMap(registrationSheet) {
 }
 
 /**
- * Verifica se há matrículas duplicadas na aba "Alunos" do Cadastro.
- * Retorna uma mensagem por matrícula duplicada, com todas as linhas onde ela aparece.
+ * Verifica se há matrículas duplicadas na aba "Alunos".
+ * * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} registrationSheet
+ * @returns {string[]} Mensagens de erro
  */
 function findDuplicateStudentIds(registrationSheet) {
   const studentsSheet = registrationSheet.getSheetByName(SHEET_NAMES.STUDENTS);
@@ -312,7 +329,7 @@ function findDuplicateStudentIds(registrationSheet) {
     const studentId = String(row[STUDENT_COLUMNS.id] ?? "").trim();
     if (!studentId) return;
 
-    const dataRow = index + 2; // +1 pelo cabeçalho, +1 por ser 1-indexed
+    const dataRow = index + 2;
     const existingRows = rowsByStudentId.get(studentId) ?? [];
     existingRows.push(dataRow);
     rowsByStudentId.set(studentId, existingRows);
@@ -327,18 +344,17 @@ function findDuplicateStudentIds(registrationSheet) {
 }
 
 /**
- * Lê a aba "Responsáveis" do Cadastro UMA ÚNICA VEZ e agrupa os nomes por
- * matrícula, em vez de reler e refiltrar a aba inteira a cada aluno.
+ * Lê a aba "Responsáveis" do Cadastro e agrupa por matrícula.
+ * * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} registrationSheet
+ * @returns {Map<string, string[]>}
  */
 function loadGuardiansMap(registrationSheet) {
   const guardiansSheet = registrationSheet.getSheetByName(
     SHEET_NAMES.GUARDIANS,
   );
-
   if (!guardiansSheet) return new Map();
 
   const rows = guardiansSheet.getDataRange().getValues().slice(1);
-
   const validRows = rows
     .map((row) => ({
       studentId: String(row[GUARDIAN_COLUMNS.studentId] ?? "").trim(),
@@ -359,7 +375,11 @@ function loadGuardiansMap(registrationSheet) {
 }
 
 /**
- * Verifica se há matrículas duplicadas na aba "Resumo" de uma turma.
+ * Verifica se há matrículas duplicadas na aba "Resumo".
+ * * @param {Array<{studentId: string, row: number}>} students
+ * @param {number|string} year
+ * @param {string} className
+ * @returns {string[]}
  */
 function findDuplicateResumoIds(students, year, className) {
   const rowsByStudentId = new Map();
@@ -380,7 +400,11 @@ function findDuplicateResumoIds(students, year, className) {
 
 /**
  * Compara os alunos da aba "Resumo" de uma turma com o Cadastro de Alunos.
- * Reporta matrículas não encontradas e divergências de nome (case/acento-insensível).
+ * * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
+ * @param {Map<string, StudentData>} registeredStudentsMap
+ * @param {number|string} year
+ * @param {string} className
+ * @returns {string[]} Array de mensagens de aviso/erro
  */
 function validateClassStudents(
   classSpreadsheet,
@@ -414,6 +438,7 @@ function validateClassStudents(
       registeredStudent.name.localeCompare(name, DEFAULT_LOCALE, {
         sensitivity: "base",
       }) !== 0;
+
     if (namesDiffer) {
       issues.push(
         `[${year} / ${className} / Resumo, linha ${row}] Nome "${name}" diverge do Cadastro ("${registeredStudent.name}") para a matrícula ${studentId}.`,
@@ -424,6 +449,10 @@ function validateClassStudents(
   return issues;
 }
 
+/**
+ * Verifica todas as configurações e estrutura de pastas.
+ * Disparada pelo menu do usuário.
+ */
 function checkConfiguration() {
   const ui = SpreadsheetApp.getUi();
   let config;
@@ -442,7 +471,6 @@ function checkConfiguration() {
   } catch (e) {
     issues.push(e.message);
   }
-
   try {
     getClassTemplateFile(config);
   } catch (e) {
@@ -502,7 +530,6 @@ function checkConfiguration() {
 
     for (const className of VALID_CLASSES) {
       let classFile;
-
       try {
         classFile = getClassSpreadsheetFile(yearFolder, year, className);
       } catch (e) {
@@ -557,8 +584,7 @@ function checkConfiguration() {
 // ============================================================
 
 /**
- *
- * @param config
+ * @param {AppConfig} config
  * @return {string[]}
  */
 function listSchoolYears(config) {
@@ -568,13 +594,18 @@ function listSchoolYears(config) {
   const folderNames = [];
   while (folderIterator.hasNext()) {
     const folder = folderIterator.next().getName();
-    if (!folder.test(/\d{4}/)) continue;
+    if (!/\d{4}/.test(folder)) continue;
     folderNames.push(folder);
   }
 
   return folderNames.sort();
 }
 
+/**
+ * @param {AppConfig} config
+ * @param {string} schoolYearLabel
+ * @returns {GoogleAppsScript.Drive.Folder}
+ */
 function getSchoolYearFolder(config, schoolYearLabel) {
   const rootFolder = DriveApp.getFolderById(config.schoolYearsFolderId);
   const subfolders = rootFolder.getFoldersByName(schoolYearLabel);
@@ -594,7 +625,6 @@ function getSchoolYearFolder(config, schoolYearLabel) {
  */
 function extractYearNumber(schoolYearLabel) {
   const match = schoolYearLabel.match(/\d{4}/);
-
   if (!match) {
     throw new Error(
       `Não foi possível identificar um ano de 4 dígitos no nome da pasta "${schoolYearLabel}".`,
@@ -604,9 +634,14 @@ function extractYearNumber(schoolYearLabel) {
   return Number(match[0]);
 }
 
+/**
+ * @param {GoogleAppsScript.Drive.Folder} yearFolder
+ * @param {string} schoolYearLabel
+ * @param {string} className
+ * @returns {GoogleAppsScript.Drive.File}
+ */
 function getClassSpreadsheetFile(yearFolder, schoolYearLabel, className) {
   const files = yearFolder.getFilesByName(className);
-
   if (!files.hasNext()) {
     throw new Error(
       `Planilha da turma "${className}" não encontrada dentro de "Anos Letivos/${schoolYearLabel}".`,
@@ -614,7 +649,6 @@ function getClassSpreadsheetFile(yearFolder, schoolYearLabel, className) {
   }
 
   const file = files.next();
-
   if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) {
     throw new Error(
       `O arquivo "${className}" em "Anos Letivos/${schoolYearLabel}" não é uma planilha do Google Sheets.`,
@@ -624,6 +658,10 @@ function getClassSpreadsheetFile(yearFolder, schoolYearLabel, className) {
   return file;
 }
 
+/**
+ * @param {AppConfig} config
+ * @returns {GoogleAppsScript.Drive.File}
+ */
 function getReportTemplateFile(config) {
   try {
     return DriveApp.getFileById(config.reportTemplateFileId);
@@ -634,6 +672,10 @@ function getReportTemplateFile(config) {
   }
 }
 
+/**
+ * @param {AppConfig} config
+ * @returns {GoogleAppsScript.Drive.File}
+ */
 function getClassTemplateFile(config) {
   try {
     return DriveApp.getFileById(config.classTemplateFileId);
@@ -644,11 +686,22 @@ function getClassTemplateFile(config) {
   }
 }
 
+/**
+ * @param {AppConfig} config
+ * @param {string} schoolYearLabel
+ * @returns {boolean}
+ */
 function schoolYearFolderExists(config, schoolYearLabel) {
   const rootFolder = DriveApp.getFolderById(config.schoolYearsFolderId);
   return rootFolder.getFoldersByName(schoolYearLabel).hasNext();
 }
 
+/**
+ * @param {AppConfig} config
+ * @param {number} yearNumber
+ * @param {string} className
+ * @returns {GoogleAppsScript.Drive.Folder}
+ */
 function getOrCreateClassPdfFolder(config, yearNumber, className) {
   const rootFolder = DriveApp.getFolderById(config.pdfsFolderId);
   const yearLabel = String(yearNumber);
@@ -668,12 +721,24 @@ function getOrCreateClassPdfFolder(config, yearNumber, className) {
 // AÇÕES DO MENU
 // ============================================================
 
+/**
+ * @param {GoogleAppsScript.Base.Ui} ui
+ * @param {string} title
+ * @param {string} message
+ * @returns {string | null}
+ */
 function promptForValue(ui, title, message) {
   const response = ui.prompt(title, message, ui.ButtonSet.OK_CANCEL);
   if (response.getSelectedButton() !== ui.Button.OK) return null;
   return response.getResponseText().trim();
 }
 
+/**
+ * @param {GoogleAppsScript.Base.Ui} ui
+ * @param {string} title
+ * @param {string[]} years
+ * @returns {{schoolYearLabel: string, className: string} | null}
+ */
 function promptSchoolYearAndClass(ui, title, years) {
   const schoolYearLabel = promptForValue(
     ui,
@@ -681,6 +746,7 @@ function promptSchoolYearAndClass(ui, title, years) {
     `Digite o ano letivo (opções: ${years.join(", ")}):`,
   );
   if (schoolYearLabel === null) return null;
+
   if (!years.includes(schoolYearLabel)) {
     ui.alert(
       `"${schoolYearLabel}" não é um ano letivo válido. Opções: ${years.join(", ")}`,
@@ -694,6 +760,7 @@ function promptSchoolYearAndClass(ui, title, years) {
     `Digite o nome da turma (opções: ${VALID_CLASSES.join(", ")}):`,
   );
   if (className === null) return null;
+
   if (!VALID_CLASSES.includes(className)) {
     ui.alert(
       `"${className}" não é uma turma válida. Opções: ${VALID_CLASSES.join(", ")}`,
@@ -705,9 +772,7 @@ function promptSchoolYearAndClass(ui, title, years) {
 }
 
 /**
- * Cria a estrutura completa de um novo ano letivo:
- * pasta "Ano Letivo — AAAA" + uma planilha por turma (cópia do modelo).
- * Recusa se a pasta do ano já existir — não sobrescreve nem completa.
+ * Wrapper com lock para criar o ano letivo
  */
 function createSchoolYear() {
   withScriptLock(
@@ -716,6 +781,9 @@ function createSchoolYear() {
   );
 }
 
+/**
+ * @param {GoogleAppsScript.Base.Ui} ui
+ */
 function createSchoolYear_(ui) {
   let config;
 
@@ -739,7 +807,6 @@ function createSchoolYear_(ui) {
   }
 
   const schoolYearLabel = `Ano Letivo — ${yearInput}`;
-
   if (schoolYearFolderExists(config, schoolYearLabel)) {
     ui.alert(
       `O ano letivo "${schoolYearLabel}" já existe. Nenhuma alteração foi feita.`,
@@ -757,7 +824,6 @@ function createSchoolYear_(ui) {
 
   const rootFolder = DriveApp.getFolderById(config.schoolYearsFolderId);
   const yearFolder = rootFolder.createFolder(schoolYearLabel);
-
   const createdClasses = [];
   const errors = [];
 
@@ -780,6 +846,11 @@ function createSchoolYear_(ui) {
   ui.alert(message);
 }
 
+/**
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
+ * @param {string} className
+ * @param {string} yearLabel
+ */
 function fillClassHeaderPlaceholders(classSpreadsheet, className, yearLabel) {
   for (const sheet of classSpreadsheet.getSheets()) {
     replaceSheetHeaderText(sheet, "{{school_class}}", className);
@@ -787,6 +858,11 @@ function fillClassHeaderPlaceholders(classSpreadsheet, className, yearLabel) {
   }
 }
 
+/**
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {string} placeholder
+ * @param {string} value
+ */
 function replaceSheetHeaderText(sheet, placeholder, value) {
   sheet
     .createTextFinder(placeholder)
@@ -794,6 +870,11 @@ function replaceSheetHeaderText(sheet, placeholder, value) {
     .replaceAllWith(value);
 }
 
+/**
+ * Executa uma ação utilizando o LockService do Apps Script.
+ * * @param {(ui: GoogleAppsScript.Base.Ui) => void} action
+ * @param {string} busyMessage
+ */
 function withScriptLock(action, busyMessage) {
   const ui = SpreadsheetApp.getUi();
   const lock = LockService.getScriptLock();
@@ -810,6 +891,9 @@ function withScriptLock(action, busyMessage) {
   }
 }
 
+/**
+ * Wrapper para gerar o boletim de um único aluno
+ */
 function generateStudentReport() {
   withScriptLock(
     generateStudentReport_,
@@ -817,6 +901,9 @@ function generateStudentReport() {
   );
 }
 
+/**
+ * @param {GoogleAppsScript.Base.Ui} ui
+ */
 function generateStudentReport_(ui) {
   let config;
 
@@ -834,6 +921,7 @@ function generateStudentReport_(ui) {
     ui.alert(`Erro: ${e.message}`);
     return;
   }
+
   if (years.length === 0) {
     ui.alert('Nenhum ano letivo encontrado dentro da pasta "Anos Letivos".');
     return;
@@ -866,8 +954,9 @@ function generateStudentReport_(ui) {
       className,
     );
     const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
-    const { found, missing } = checkClassSubjects(classSpreadsheet);
 
+    const { found: foundSubjects, missing } =
+      checkClassSubjects(classSpreadsheet);
     if (missing.length > 0) {
       ui.alert(
         `Atenção: as seguintes disciplinas não foram encontradas nessa turma e serão ignoradas no boletim:\n` +
@@ -875,7 +964,7 @@ function generateStudentReport_(ui) {
       );
     }
 
-    if (found.length === 0) {
+    if (foundSubjects.length === 0) {
       ui.alert(
         "Nenhuma disciplina reconhecida nessa turma. Não é possível gerar o boletim.",
       );
@@ -890,26 +979,30 @@ function generateStudentReport_(ui) {
       return;
     }
 
-    const context = buildReportContext(
+    const context = buildReportContext({
       config,
       classSpreadsheet,
       schoolYearLabel,
       className,
-      found,
-    );
-    const pdfUrl = generateReportForStudent(
+      foundSubjects,
+    });
+    const pdfUrl = generateReportForStudent({
       studentId,
       rowNumber,
       className,
-      found,
+      foundSubjects,
       context,
-    );
+    });
+
     ui.alert(`Boletim gerado com sucesso!\n\n${pdfUrl}`);
   } catch (e) {
     ui.alert(`Erro ao gerar boletim: ${e.message}`);
   }
 }
 
+/**
+ * Wrapper para gerar todos os boletins da turma
+ */
 function generateClassReports() {
   withScriptLock(
     generateClassReports_,
@@ -917,6 +1010,9 @@ function generateClassReports() {
   );
 }
 
+/**
+ * @param {GoogleAppsScript.Base.Ui} ui
+ */
 function generateClassReports_(ui) {
   let config;
 
@@ -934,6 +1030,7 @@ function generateClassReports_(ui) {
     ui.alert(`Erro: ${e.message}`);
     return;
   }
+
   if (years.length === 0) {
     ui.alert('Nenhum ano letivo encontrado dentro da pasta "Anos Letivos".');
     return;
@@ -961,7 +1058,8 @@ function generateClassReports_(ui) {
     return;
   }
 
-  const { found, missing } = checkClassSubjects(classSpreadsheet);
+  const { found: foundSubjects, missing } =
+    checkClassSubjects(classSpreadsheet);
   if (missing.length > 0) {
     ui.alert(
       `Atenção: as seguintes disciplinas não foram encontradas e serão ignoradas:\n` +
@@ -969,16 +1067,15 @@ function generateClassReports_(ui) {
     );
   }
 
-  if (found.length === 0) {
+  if (foundSubjects.length === 0) {
     ui.alert(
       "Nenhuma disciplina reconhecida nessa turma. Não é possível gerar boletins.",
     );
     return;
   }
 
-  const firstSheet = findSubjectSheet(classSpreadsheet, found[0]);
+  const firstSheet = findSubjectSheet(classSpreadsheet, foundSubjects[0]);
   const lastRow = firstSheet.getLastRow();
-
   const studentIdRows =
     lastRow >= FIRST_DATA_ROW
       ? firstSheet
@@ -986,13 +1083,13 @@ function generateClassReports_(ui) {
           .getValues()
       : [];
 
-  const context = buildReportContext(
+  const context = buildReportContext({
     config,
     classSpreadsheet,
     schoolYearLabel,
     className,
-    found,
-  );
+    foundSubjects,
+  });
 
   let successCount = 0;
   const errors = [];
@@ -1010,26 +1107,27 @@ function generateClassReports_(ui) {
 
     if (!studentId) continue;
 
-    const row = FIRST_DATA_ROW + index;
-
+    const rowNumber = FIRST_DATA_ROW + index;
     try {
-      generateReportForStudent(
-        String(studentId),
-        row,
+      generateReportForStudent({
+        studentId: String(studentId),
+        rowNumber,
         className,
-        found,
+        foundSubjects,
         context,
-      );
+      });
       successCount++;
     } catch (e) {
-      errors.push(`Linha ${row} (matrícula ${studentId}): ${e.message}`);
+      errors.push(`Linha ${rowNumber} (matrícula ${studentId}): ${e.message}`);
     }
 
     Utilities.sleep(200); // pequena folga para evitar erros transitórios de cota no Drive
   }
 
   if (errors.length > 0) {
-    ui.alert(`${summary}\n\nErros:\n${errors.join("\n")}`);
+    ui.alert(
+      `Foram processados com alguns erros.\n\nErros:\n${errors.join("\n")}`,
+    );
     return undefined;
   }
 
@@ -1039,18 +1137,23 @@ function generateClassReports_(ui) {
 }
 
 /**
- * Monta, uma única vez por turma, tudo que generateReportForStudent precisa:
- * cadastro de alunos, responsáveis, notas de cada disciplina, modelo do boletim
- * e pasta de destino do PDF. Isso evita reabrir planilhas e refazer buscas no
- * Drive a cada aluno gerado.
+ * Monta o contexto que `generateReportForStudent` precisa.
+ *
+ * @param {Object} params
+ * @param {AppConfig} params.config
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} params.classSpreadsheet
+ * @param {string} params.schoolYearLabel
+ * @param {string} params.className
+ * @param {Subject[]} params.foundSubjects
+ * @returns {ReportContext}
  */
-function buildReportContext(
+function buildReportContext({
   config,
   classSpreadsheet,
   schoolYearLabel,
   className,
   foundSubjects,
-) {
+}) {
   const yearNumber = extractYearNumber(schoolYearLabel);
   const registrationSheet = SpreadsheetApp.openById(
     config.studentsSpreadsheetId,
@@ -1067,13 +1170,22 @@ function buildReportContext(
   };
 }
 
-function generateReportForStudent(
+/**
+ * @param {Object} params
+ * @param {string} params.studentId
+ * @param {number} params.rowNumber
+ * @param {string} params.className
+ * @param {Subject[]} params.foundSubjects
+ * @param {ReportContext} params.context
+ * @returns {string} PDF URL
+ */
+function generateReportForStudent({
   studentId,
   rowNumber,
   className,
   foundSubjects,
   context,
-) {
+}) {
   const personalData = getPersonalData(studentId, context);
   const gradesData = getGradesForRow(rowNumber, foundSubjects, context);
 
@@ -1103,6 +1215,7 @@ function generateReportForStudent(
 
     doc.saveAndClose();
     const pdfBlob = docCopy.getAs("application/pdf");
+
     const pdfFile = context.pdfFolder
       .createFile(pdfBlob)
       .setName(`${fileName}.pdf`);
@@ -1113,6 +1226,11 @@ function generateReportForStudent(
   }
 }
 
+/**
+ * @param {GoogleAppsScript.Document.Body} body
+ * @param {string} subjectCode
+ * @param {Object} grades
+ */
 function fillSubjectPlaceholders(body, subjectCode, grades) {
   for (const { suffix, field, format } of SUBJECT_PLACEHOLDER_FIELDS) {
     replacePlaceholder(body, `${subjectCode}_${suffix}`, format(grades[field]));
@@ -1123,6 +1241,11 @@ function fillSubjectPlaceholders(body, subjectCode, grades) {
 // LEITURA DE DADOS
 // ============================================================
 
+/**
+ * @param {string} studentId
+ * @param {ReportContext} context
+ * @returns {PersonalData}
+ */
 function getPersonalData(studentId, context) {
   const student = context.studentsMap.get(studentId);
 
@@ -1137,6 +1260,11 @@ function getPersonalData(studentId, context) {
   return { ...student, guardianNames: formatGuardianNames(guardianNames) };
 }
 
+/**
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
+ * @param {Subject[]} foundSubjects
+ * @returns {Map<string, any[][]>}
+ */
 function loadGradesBySubject(classSpreadsheet, foundSubjects) {
   const map = new Map();
 
@@ -1163,6 +1291,12 @@ function loadGradesBySubject(classSpreadsheet, foundSubjects) {
   return map;
 }
 
+/**
+ * @param {number} rowNumber
+ * @param {Subject[]} foundSubjects
+ * @param {ReportContext} context
+ * @returns {Record<string, Object | null>}
+ */
 function getGradesForRow(rowNumber, foundSubjects, context) {
   const result = {};
 
@@ -1183,6 +1317,12 @@ function getGradesForRow(rowNumber, foundSubjects, context) {
   return result;
 }
 
+/**
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
+ * @param {string} studentId
+ * @param {Subject[]} foundSubjects
+ * @returns {number | null}
+ */
 function findRowByStudentId(classSpreadsheet, studentId, foundSubjects) {
   const sheet = findSubjectSheet(classSpreadsheet, foundSubjects[0]);
   if (!sheet) return null;
@@ -1203,16 +1343,18 @@ function findRowByStudentId(classSpreadsheet, studentId, foundSubjects) {
 // ============================================================
 
 /**
- * @param body
- * @param key
- * @param value
+ * Substitui um termo (placeholder) pelo valor dentro do corpo do documento.
+ * * @param {GoogleAppsScript.Document.Body} body
+ * @param {string} key
+ * @param {string | null | undefined} value
  */
 function replacePlaceholder(body, key, value) {
   body.replaceText("{{" + key + "}}", value ?? "");
 }
 
 /**
- * @param {string[]} names
+ * Formata os nomes dos responsáveis concatenando-os corretamente.
+ * * @param {string[]} names
  * @return {string}
  */
 function formatGuardianNames(names) {
@@ -1226,12 +1368,12 @@ function formatGuardianNames(names) {
 }
 
 /**
- * @param value
+ * Formata os números que representam as notas com até 2 casas decimais.
+ * * @param {any} value
  * @returns {string}
  */
 function formatGrade(value) {
   if (value === "" || value === null || value === undefined) return "";
-
   const number = Number(value);
 
   if (Number.isNaN(number)) return String(value);
@@ -1243,7 +1385,8 @@ function formatGrade(value) {
 }
 
 /**
- * @param value
+ * Formata um valor simples, inserindo "---" caso esteja vazio.
+ * * @param {any} value
  * @return {string}
  */
 function formatValue(value) {
@@ -1253,8 +1396,9 @@ function formatValue(value) {
 }
 
 /**
- * @param {Date} date
- * @param {Intl.DateTimeFormatOptions} options
+ * Retorna a data no formato extenso e de acordo com as opções nativas do objeto Date.
+ * * @param {Date} date
+ * @param {Intl.DateTimeFormatOptions} [options]
  * @return {string}
  */
 function formatLongDate(date, options) {
