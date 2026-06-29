@@ -1311,7 +1311,7 @@ function generateStudentReport_(ui) {
     template.pdfUrl = pdfUrl;
     template.pdfFolderUrl = context.pdfFolder.getUrl();
 
-    const htmlOutput = template.evaluate().setWidth(400).setHeight(220);
+    const htmlOutput = template.evaluate().setWidth(420).setHeight(360);
     ui.showModalDialog(htmlOutput, "Boletim gerado");
   } catch (e) {
     ui.alert(`Erro ao gerar boletim: ${e.message}`);
@@ -1461,7 +1461,7 @@ function generateClassReports_(ui) {
   template.truncatedCount = truncatedCount;
   template.pdfFolderUrl = context.pdfFolder.getUrl();
 
-  const htmlOutput = template.evaluate().setWidth(420).setHeight(320);
+  const htmlOutput = template.evaluate().setWidth(450).setHeight(460);
   ui.showModalDialog(htmlOutput, "Boletins gerados");
 }
 
