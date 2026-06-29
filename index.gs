@@ -87,6 +87,13 @@
  * @property {(value: any) => string} format
  */
 
+/**
+ * @typedef {Object} ValidClass
+ * @property {string} className
+ * @property {string} stage
+ * @property {string} shift
+ */
+
 const DEFAULT_LOCALE = "pt-BR";
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 const SCHOOL_YEAR_LABEL_PREFIX = "Ano Letivo - ";
@@ -97,8 +104,17 @@ const FIRST_DATA_ROW = 5;
 
 const GRADE_COLUMNS_COUNT = 17;
 
-/** @type {string[]} */
-const VALID_CLASSES = ["6º Ano", "7º Ano", "8º Ano", "9º Ano"];
+/**
+ * Turmas únicas, não insira duas vezes o mesmo className.
+ *
+ *  @type {ValidClass[]}
+ */
+const VALID_CLASSES = [
+  { className: "6º Ano", stage: "Ensino Fundamental II", shift: "Vespertino" },
+  { className: "7º Ano", stage: "Ensino Fundamental II", shift: "Vespertino" },
+  { className: "8º Ano", stage: "Ensino Fundamental II", shift: "Vespertino" },
+  { className: "9º Ano", stage: "Ensino Fundamental II", shift: "Vespertino" },
+];
 
 /** @type {Subject[]} */
 const VALID_SUBJECTS = [
@@ -132,7 +148,7 @@ const SUBJECT_PLACEHOLDER_FIELDS = [
   {
     suffix: "sf",
     field: "status",
-    format: (status) => status.slice(3).toUpperCase() ?? "",
+    format: (status) => status.slice(0, 3).toUpperCase() ?? "",
   },
 ];
 
@@ -236,7 +252,7 @@ function loadConfig() {
 
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu("<< Sistema Escolar >>")
+    .createMenu("Sistema Escolar")
     .addItem("Gerar boletim do aluno", "generateStudentReport")
     .addItem("Gerar boletins da turma", "generateClassReports")
     .addSeparator()
@@ -427,10 +443,6 @@ function checkClassSubjects(classSpreadsheet) {
 }
 
 /**
- * Lê todos os alunos (matrícula + nome) da aba "Resumo". Esta é a lista
- * oficial de quem pertence à turma — usada tanto pela validação quanto
- * para confirmar que um aluno pertence à turma antes de gerar seu boletim.
- *
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
  * @returns {Array<{studentId: string, name: string, row: number}>}
  */
@@ -462,8 +474,6 @@ function getClassStudentsFromResumo(classSpreadsheet) {
 /**
  * Verifica se um aluno pertence à turma, usando "Resumo" como lista
  * oficial de matrículas — a mesma fonte usada por `validateClassStudents`.
- * Evita depender da primeira disciplina encontrada, que pode estar
- * desalinhada com o cadastro real da turma.
  *
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
  * @param {string} studentId
@@ -699,10 +709,6 @@ function loadGradesBySubject(classSpreadsheet, foundSubjects) {
             .getValues()
         : [];
 
-    // column 0 holds the student ID, just like "Resumo" — indexing by it
-    // (instead of by row position) avoids assigning a student's grades to
-    // a different student if a subject sheet ever gets sorted, has a row
-    // added/removed, or otherwise loses alignment with the other sheets.
     const byStudentId = new Map(
       rows
         .map((row) => [String(row[0] ?? "").trim(), row])
@@ -716,12 +722,6 @@ function loadGradesBySubject(classSpreadsheet, foundSubjects) {
 }
 
 /**
- * Carrega as notas de um único aluno em cada disciplina da turma, lendo
- * apenas a linha correspondente em cada aba (em vez da aba inteira).
- * Devolve o mesmo formato de `loadGradesBySubject` (mapa por disciplina ->
- * mapa por matrícula -> linha), para ser consumido por `getGradesForStudent`
- * sem nenhuma alteração.
- *
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
  * @param {Subject[]} foundSubjects
  * @param {string} studentId
@@ -939,7 +939,7 @@ function checkConfiguration() {
       continue;
     }
 
-    for (const className of VALID_CLASSES) {
+    for (const { className } of VALID_CLASSES) {
       let classFile;
       try {
         classFile = getClassSpreadsheetFile(yearFolder, year, className);
@@ -1007,39 +1007,68 @@ function promptForValue(ui, title, message) {
 }
 
 /**
+ *
+ * @param {GoogleAppsScript.Base.Ui} ui
+ * @param {string} title
+ * @param {string} label
+ * @param {string[]} options
+ * @returns {string | null}
+ */
+function promptFromNumberedList(ui, title, label, options) {
+  const numberedOptions = options
+    .map((option, index) => `${index + 1}) ${option}`)
+    .join("\n");
+
+  const input = promptForValue(
+    ui,
+    title,
+    `${label}:\n\n${numberedOptions}\n\nDigite o número da opção:`,
+  );
+  if (input === null) return null;
+
+  const optionNumber = Number(input);
+  if (
+    !Number.isInteger(optionNumber) ||
+    optionNumber < 1 ||
+    optionNumber > options.length
+  ) {
+    ui.alert(
+      `"${input}" não é uma opção válida. Digite um número de 1 a ${options.length}.`,
+    );
+    return null;
+  }
+
+  return options[optionNumber - 1];
+}
+
+/**
  * @param {GoogleAppsScript.Base.Ui} ui
  * @param {string} title
  * @param {string[]} years
  * @returns {{schoolYearLabel: string, className: string} | null}
  */
 function promptSchoolYearAndClass(ui, title, years) {
-  const schoolYearLabel = promptForValue(
+  // ===================================
+  // SELECIONAR ANO LETIVO
+  // ===================================
+  const schoolYearLabel = promptFromNumberedList(
     ui,
     title,
-    `Digite o ano letivo (opções: ${years.join(", ")}):`,
+    "Selecione o ano letivo",
+    years,
   );
   if (schoolYearLabel === null) return null;
 
-  if (!years.includes(schoolYearLabel)) {
-    ui.alert(
-      `"${schoolYearLabel}" não é um ano letivo válido. Opções: ${years.join(", ")}`,
-    );
-    return null;
-  }
-
-  const className = promptForValue(
+  // ===================================
+  // SELECIONAR TURMA
+  // ===================================
+  const className = promptFromNumberedList(
     ui,
     title,
-    `Digite o nome da turma (opções: ${VALID_CLASSES.join(", ")}):`,
+    "Selecione a turma",
+    VALID_CLASSES.map(({ className }) => className),
   );
   if (className === null) return null;
-
-  if (!VALID_CLASSES.includes(className)) {
-    ui.alert(
-      `"${className}" não é uma turma válida. Opções: ${VALID_CLASSES.join(", ")}`,
-    );
-    return null;
-  }
 
   return { schoolYearLabel, className };
 }
@@ -1122,7 +1151,7 @@ function createSchoolYear_(ui) {
   const createdClasses = [];
   const errors = [];
 
-  for (const className of VALID_CLASSES) {
+  for (const { className } of VALID_CLASSES) {
     try {
       const classFile = classTemplateFile.makeCopy(className, yearFolder);
       const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
@@ -1134,10 +1163,6 @@ function createSchoolYear_(ui) {
   }
 
   if (errors.length > 0) {
-    // Desfaz a criação para não deixar a pasta do ano num estado parcial:
-    // sem isso, uma nova tentativa para o mesmo ano seria bloqueada pela
-    // checagem "já existe" acima, mesmo com turmas faltando e sem nenhuma
-    // forma de retomar ou completar pelo menu.
     yearFolder.setTrashed(true);
     ui.alert(
       `Não foi possível criar o ano letivo "${schoolYearLabel}". Nenhuma alteração foi feita.\n\n` +
@@ -1216,6 +1241,7 @@ function generateStudentReport_(ui) {
     "Gerar boletim de um aluno",
     years,
   );
+
   if (!selection) return;
   const { schoolYearLabel, className } = selection;
 
@@ -1224,6 +1250,7 @@ function generateStudentReport_(ui) {
     "Gerar boletim de um aluno",
     "Digite a matrícula do aluno:",
   );
+
   if (studentId === null) return;
   if (!studentId) {
     ui.alert("Matrícula não pode ser vazia.");
@@ -1277,7 +1304,15 @@ function generateStudentReport_(ui) {
       context,
     });
 
-    ui.alert(`Boletim gerado com sucesso!\n\n${pdfUrl}`);
+    const template = HtmlService.createTemplateFromFile("ReportSuccessDialog");
+    template.studentId = studentId;
+    template.className = className;
+    template.schoolYearLabel = schoolYearLabel;
+    template.pdfUrl = pdfUrl;
+    template.pdfFolderUrl = context.pdfFolder.getUrl();
+
+    const htmlOutput = template.evaluate().setWidth(400).setHeight(220);
+    ui.showModalDialog(htmlOutput, "Boletim gerado");
   } catch (e) {
     ui.alert(`Erro ao gerar boletim: ${e.message}`);
   }
@@ -1327,11 +1362,6 @@ function generateClassReports_(ui) {
   if (!selection) return;
   const { schoolYearLabel, className } = selection;
 
-  // Tudo que pode falhar antes do loop por aluno (abrir planilha, checar
-  // disciplinas, montar o contexto em lote) fica num único try/catch —
-  // sem isso, um erro aqui (ex.: ID de pasta inválido na Configuração)
-  // subiria sem tratamento e mostraria o erro técnico genérico do Apps
-  // Script em vez de uma mensagem em português.
   let classSpreadsheet;
   let foundSubjects;
   let studentIdRows;
@@ -1386,7 +1416,9 @@ function generateClassReports_(ui) {
   const errors = [];
 
   const startTime = Date.now();
-  const MAX_RUNTIME_MS = 5 * 60 * 1000; // safety margin before the 6-minute limit
+
+  // limita o tempo de execução para 5 minutos
+  const MAX_RUNTIME_MS = 5 * 60 * 1000;
 
   for (const [index, [studentId]] of studentIdRows.entries()) {
     if (Date.now() - startTime > MAX_RUNTIME_MS) {
@@ -1411,19 +1443,26 @@ function generateClassReports_(ui) {
       errors.push(`Linha ${rowNumber} (matrícula ${studentId}): ${e.message}`);
     }
 
-    Utilities.sleep(200); // pequena folga para evitar erros transitórios de cota no Drive
+    // pequena folga para evitar erros transitórios de cota no Drive
+    Utilities.sleep(200);
   }
 
-  if (errors.length > 0) {
-    ui.alert(
-      `${successCount} boletim(ns) gerado(s) com sucesso. ${errors.length} erro(s):\n\n${errors.join("\n")}`,
-    );
-    return;
-  }
+  const MAX_ERRORS_SHOWN = 15;
+  const errorsToShow = errors.slice(0, MAX_ERRORS_SHOWN);
+  const truncatedCount = errors.length - errorsToShow.length;
 
-  ui.alert(
-    `${successCount} boletim(ns) gerado(s) com sucesso para "${className}" (${schoolYearLabel}).`,
+  const template = HtmlService.createTemplateFromFile(
+    "ClassReportResultDialog",
   );
+  template.successCount = successCount;
+  template.className = className;
+  template.schoolYearLabel = schoolYearLabel;
+  template.errors = errorsToShow;
+  template.truncatedCount = truncatedCount;
+  template.pdfFolderUrl = context.pdfFolder.getUrl();
+
+  const htmlOutput = template.evaluate().setWidth(420).setHeight(320);
+  ui.showModalDialog(htmlOutput, "Boletins gerados");
 }
 
 // ============================================================
@@ -1517,7 +1556,7 @@ function buildSingleStudentReportContext({
  * @param {string} params.className
  * @param {Subject[]} params.foundSubjects
  * @param {ReportContext} params.context
- * @returns {string} PDF URL
+ * @returns {string} O URL do arquivo PDF gerado
  */
 function generateReportForStudent({
   studentId,
@@ -1531,11 +1570,12 @@ function generateReportForStudent({
   const fileName = `${studentId}_${personalData.name.replace(/\s+/g, "_").toLowerCase()}`;
   const docCopy = context.templateFile.makeCopy(fileName, context.tempFolder);
 
+  const classInfo = VALID_CLASSES.find((c) => c.className === className);
+  const date = new Date();
+
   try {
     const doc = DocumentApp.openById(docCopy.getId());
     const body = doc.getBody();
-
-    const date = new Date();
 
     // =========================================================================
     // DADOS PESSOAIS
@@ -1549,11 +1589,10 @@ function generateReportForStudent({
     replacePlaceholder(body, "nacionalidade", personalData.nationality);
     replacePlaceholder(body, "sexo", formatSex(personalData.sex));
 
-    replacePlaceholder(body, "etapa", "Ensino Fundaental II");
-
-    replacePlaceholder(body, "serie", className);
+    replacePlaceholder(body, "etapa", classInfo?.stage ?? "");
+    replacePlaceholder(body, "serie", classInfo?.className ?? "");
     replacePlaceholder(body, "turma", "Única");
-    replacePlaceholder(body, "turno", "Vespertino");
+    replacePlaceholder(body, "turno", classInfo?.shift ?? "");
 
     replacePlaceholder(body, "ano_letivo", String(context.yearNumber));
 
@@ -1581,11 +1620,6 @@ function generateReportForStudent({
 }
 
 /**
- * Remove versões anteriores do boletim deste aluno na pasta de PDFs,
- * mantendo apenas o arquivo recém-criado (identificado pelo ID) — assim a
- * pasta nunca acumula PDFs duplicados com o mesmo nome quando o boletim é
- * gerado mais de uma vez para o mesmo aluno.
- *
  * @param {GoogleAppsScript.Drive.Folder} pdfFolder
  * @param {string} fileName
  * @param {string} keepFileId
@@ -1671,15 +1705,17 @@ function formatGrade(value) {
 }
 
 /**
- * Formata um valor simples, inserindo "---" caso esteja vazio.
+ * Formata um valor simples, inserindo "--" caso esteja vazio.
  *
  * @param {any} value
  * @return {string}
  */
 function formatValue(value) {
-  return value === "" || value === null || value === undefined
-    ? "--"
-    : String(value);
+  if (value === "" || value === null || value === undefined) {
+    return "--";
+  }
+
+  return String(value);
 }
 
 /**
@@ -1692,6 +1728,7 @@ function formatSex(sex) {
     F: "Feminino",
     M: "Masculino",
   };
+
   return gender[sex] ?? "";
 }
 
