@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
+    ></script>
+  </head>
+  <body class="bg-white text-slate-900 antialiased p-5">
+    <div x-data="reportForm()" class="space-y-4">
+      <div>
+        <label
+          class="text-xs font-medium text-slate-500 uppercase tracking-wider block mb-1"
+          >Ano Letivo</label
+        >
+        <select
+          x-model="schoolYear"
+          :disabled="isLoading"
+          class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 transition-all disabled:opacity-50"
+        >
+          <? for (const year of years) { ?>
+          <option value="<?= year ?>"><?= year ?></option>
+          <? } ?>
+        </select>
+      </div>
+
+      <div>
+        <label
+          class="text-xs font-medium text-slate-500 uppercase tracking-wider block mb-1"
+          >Turma</label
+        >
+        <select
+          x-model="className"
+          :disabled="isLoading"
+          class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 transition-all disabled:opacity-50"
+        >
+          <? for (const cls of classes) { ?>
+          <option value="<?= cls ?>"><?= cls ?></option>
+          <? } ?>
+        </select>
+      </div>
+
+      <template x-if="actionType === 'single'">
+        <div>
+          <label
+            class="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center mb-1"
+          >
+            Matrícula do Aluno
+            <span
+              x-show="isFetchingStudents"
+              class="ml-2 inline-block w-3 h-3 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"
+            ></span>
+          </label>
+
+          <input
+            type="text"
+            x-model="studentId"
+            list="studentsList"
+            :disabled="isLoading || isFetchingStudents"
+            placeholder="Digite ou selecione a matrícula"
+            class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 transition-all disabled:opacity-50"
+          />
+          <datalist id="studentsList">
+            <template x-for="id in availableStudentIds" :key="id">
+              <option :value="id"></option>
+            </template>
+          </datalist>
+        </div>
+      </template>
+
+      <div
+        x-show="error"
+        x-text="error"
+        x-transition
+        class="text-xs font-medium text-red-600 bg-red-50 p-2.5 rounded-md border border-red-100"
+        style="display: none"
+      ></div>
+
+      <div class="flex items-center justify-end space-x-2 pt-2">
+        <button
+          @click="google.script.host.close()"
+          :disabled="isLoading"
+          class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-slate-200 bg-white hover:bg-slate-50 px-4 py-2 text-slate-700 focus:outline-none disabled:opacity-50"
+        >
+          Cancelar
+        </button>
+        <button
+          @click="submit()"
+          :disabled="isLoading || (actionType === 'single' && isFetchingStudents)"
+          class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 focus:outline-none disabled:opacity-70 disabled:cursor-not-allowed"
+        >
+          <span x-text="isLoading ? 'Processando...' : 'Confirmar'"></span>
+        </button>
+      </div>
+    </div>
+
+    <script>
+      function reportForm() {
+        return {
+          // Inicialização de dados
+          actionType: "<?= actionType ?>",
+          schoolYear: "<?= years[0] ?>",
+          className: "<?= classes[0] ?>",
+          studentId: "",
+          availableStudentIds: [],
+
+          // Estados
+          isLoading: false,
+          isFetchingStudents: false,
+          error: "",
+
+          init() {
+            if (this.actionType === "single") {
+              this.fetchStudents();
+              // Observa mudanças nos selects para refazer a busca
+              this.$watch("schoolYear", () => this.fetchStudents());
+              this.$watch("className", () => this.fetchStudents());
+            }
+          },
+
+          fetchStudents() {
+            this.isFetchingStudents = true;
+            this.availableStudentIds = [];
+            this.studentId = "";
+            this.error = "";
+
+            google.script.run
+              .withSuccessHandler((ids) => {
+                this.availableStudentIds = ids;
+                this.isFetchingStudents = false;
+              })
+              .withFailureHandler((err) => {
+                this.error = "Erro ao buscar matrículas: " + err.message;
+                this.isFetchingStudents = false;
+              })
+              .getStudentIdsForClass(this.schoolYear, this.className);
+          },
+
+          submit() {
+            this.error = "";
+            this.isLoading = true;
+
+            if (this.actionType === "single") {
+              if (!this.studentId.trim()) {
+                this.error = "A matrícula do aluno não pode ser vazia.";
+                this.isLoading = false;
+                return;
+              }
+
+              google.script.run
+                .withSuccessHandler(() => google.script.host.close())
+                .withFailureHandler((err) => {
+                  this.error = err.message;
+                  this.isLoading = false;
+                })
+                .executeStudentReportGeneration(
+                  this.schoolYear,
+                  this.className,
+                  this.studentId.trim(),
+                );
+            } else {
+              google.script.run
+                .withSuccessHandler(() => google.script.host.close())
+                .withFailureHandler((err) => {
+                  this.error = err.message;
+                  this.isLoading = false;
+                })
+                .executeClassReportsGeneration(this.schoolYear, this.className);
+            }
+          },
+        };
+      }
+    </script>
+  </body>
+</html>
