@@ -106,8 +106,7 @@ const GRADE_COLUMNS_COUNT = 17;
 
 /**
  * Turmas únicas, não insira duas vezes o mesmo className.
- *
- *  @type {ValidClass[]}
+ * @type {ValidClass[]}
  */
 const VALID_CLASSES = [
   { className: "6º Ano", stage: "Ensino Fundamental II", shift: "Vespertino" },
@@ -452,7 +451,6 @@ function getClassStudentsFromResumo(classSpreadsheet) {
 
   const lastRow = resumoSheet.getLastRow();
   if (lastRow < SUMMARY_FIRST_DATA_ROW) return [];
-
   const values = resumoSheet
     .getRange(
       SUMMARY_FIRST_DATA_ROW,
@@ -506,7 +504,6 @@ function loadStudentsMap(registrationSheet) {
   for (const row of rows) {
     const studentId = String(row[STUDENT_COLUMNS.id] ?? "").trim();
     if (!studentId) continue;
-
     map.set(studentId, {
       name: String(row[STUDENT_COLUMNS.name] ?? "").trim(),
       address: row[STUDENT_COLUMNS.address],
@@ -560,6 +557,7 @@ function loadGuardiansMap(registrationSheet) {
   const guardiansSheet = registrationSheet.getSheetByName(
     SHEET_NAMES.GUARDIANS,
   );
+
   if (!guardiansSheet) return new Map();
 
   const rows = guardiansSheet.getDataRange().getValues().slice(1);
@@ -618,6 +616,7 @@ function findDuplicateResumoIds(students, year, className) {
  */
 function loadSingleStudentMap(registrationSheet, studentId) {
   const studentsSheet = registrationSheet.getSheetByName(SHEET_NAMES.STUDENTS);
+
   if (!studentsSheet) {
     throw new Error(
       `Cadastro de Alunos: a aba "${SHEET_NAMES.STUDENTS}" não existe.`,
@@ -633,6 +632,7 @@ function loadSingleStudentMap(registrationSheet, studentId) {
     .createTextFinder(studentId)
     .matchEntireCell(true)
     .findNext();
+
   if (!match) return map;
 
   const row = studentsSheet
@@ -899,7 +899,6 @@ function checkConfiguration() {
     const registrationSheet = SpreadsheetApp.openById(
       config.studentsSpreadsheetId,
     );
-
     if (!registrationSheet.getSheetByName(SHEET_NAMES.STUDENTS)) {
       issues.push(
         `Cadastro de Alunos: a aba "${SHEET_NAMES.STUDENTS}" não existe.`,
@@ -1007,78 +1006,218 @@ function promptForValue(ui, title, message) {
 }
 
 /**
- *
- * @param {GoogleAppsScript.Base.Ui} ui
- * @param {string} title
- * @param {string} label
- * @param {string[]} options
- * @returns {string | null}
+ * Abre o diálogo unificado de seleção de Ano Letivo e Turma.
+ * @param {"single" | "class"} actionType 'single' para aluno individual, 'class' para a turma toda.
  */
-function promptFromNumberedList(ui, title, label, options) {
-  const numberedOptions = options
-    .map((option, index) => `${index + 1}) ${option}`)
-    .join("\n");
+function openSelectYearClassDialog(actionType) {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const config = loadConfig();
+    const years = listSchoolYears(config);
 
-  const input = promptForValue(
-    ui,
-    title,
-    `${label}:\n\n${numberedOptions}\n\nDigite o número da opção:`,
-  );
-  if (input === null) return null;
+    if (years.length === 0) {
+      ui.alert('Nenhum ano letivo encontrado dentro da pasta "Anos Letivos".');
+      return;
+    }
 
-  const optionNumber = Number(input);
-  if (
-    !Number.isInteger(optionNumber) ||
-    optionNumber < 1 ||
-    optionNumber > options.length
-  ) {
-    ui.alert(
-      `"${input}" não é uma opção válida. Digite um número de 1 a ${options.length}.`,
+    const template = HtmlService.createTemplateFromFile(
+      "SelectYearClassDialog",
     );
-    return null;
+    template.years = years;
+    template.classes = VALID_CLASSES.map((c) => c.className);
+    template.actionType = actionType;
+
+    const height = actionType === "single" ? 320 : 240;
+
+    const htmlOutput = template.evaluate().setWidth(400).setHeight(height);
+
+    ui.showModalDialog(
+      htmlOutput,
+      actionType === "single"
+        ? "Gerar Boletim do Aluno"
+        : "Gerar Boletins da Turma",
+    );
+  } catch (e) {
+    ui.alert(`Erro ao abrir seleção: ${e.message}`);
+  }
+}
+
+function generateStudentReport() {
+  openSelectYearClassDialog("single");
+}
+
+function generateClassReports() {
+  openSelectYearClassDialog("class");
+}
+
+/**
+ * Endpoint para o Alpine.js buscar matrículas ao selecionar uma turma.
+ */
+function getStudentIdsForClass(schoolYearLabel, className) {
+  try {
+    const config = loadConfig();
+    const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
+    const classFile = getClassSpreadsheetFile(
+      yearFolder,
+      schoolYearLabel,
+      className,
+    );
+    const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
+
+    const students = getClassStudentsFromResumo(classSpreadsheet);
+    return students.map((s) => s.studentId);
+  } catch (e) {
+    throw new Error(e.message);
+  }
+}
+
+function executeClassReportsGeneration(schoolYearLabel, className) {
+  withScriptLock((ui) => {
+    executeClassReportsGeneration_(ui, schoolYearLabel, className);
+  }, "Já existe uma geração de boletins em andamento. Tente novamente em alguns instantes.");
+}
+
+function executeStudentReportGeneration(schoolYearLabel, className, studentId) {
+  if (!studentId) throw new Error("Matrícula não pode ser vazia.");
+  withScriptLock((ui) => {
+    executeStudentReportGeneration_(ui, schoolYearLabel, className, studentId);
+  }, "Já existe uma geração de boletim em andamento. Tente novamente em alguns instantes.");
+}
+
+function executeClassReportsGeneration_(ui, schoolYearLabel, className) {
+  const config = loadConfig();
+  const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
+  const classFile = getClassSpreadsheetFile(
+    yearFolder,
+    schoolYearLabel,
+    className,
+  );
+  const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
+
+  const { found, missing } = checkClassSubjects(classSpreadsheet);
+  if (found.length === 0) {
+    throw new Error("Nenhuma disciplina reconhecida nessa turma.");
+  }
+  const foundSubjects = found;
+
+  const firstSheet = findSubjectSheet(classSpreadsheet, foundSubjects[0]);
+  const lastRow = firstSheet.getLastRow();
+  const studentIdRows =
+    lastRow >= FIRST_DATA_ROW
+      ? firstSheet
+          .getRange(FIRST_DATA_ROW, 1, lastRow - FIRST_DATA_ROW + 1, 1)
+          .getValues()
+      : [];
+
+  const context = buildReportContext({
+    config,
+    classSpreadsheet,
+    schoolYearLabel,
+    className,
+    foundSubjects,
+  });
+
+  let successCount = 0;
+  const errors = [];
+  const startTime = Date.now();
+  const MAX_RUNTIME_MS = 5 * 60 * 1000;
+
+  for (const [index, [studentId]] of studentIdRows.entries()) {
+    if (Date.now() - startTime > MAX_RUNTIME_MS) {
+      errors.push(
+        `Execução interrompida por tempo: restam alunos a partir da linha ${FIRST_DATA_ROW + index}.`,
+      );
+      break;
+    }
+
+    if (!studentId) continue;
+    const rowNumber = FIRST_DATA_ROW + index;
+
+    try {
+      generateReportForStudent({
+        studentId: String(studentId),
+        className,
+        foundSubjects,
+        context,
+      });
+      successCount++;
+    } catch (e) {
+      errors.push(`Linha ${rowNumber} (matrícula ${studentId}): ${e.message}`);
+    }
+    Utilities.sleep(200);
   }
 
-  return options[optionNumber - 1];
+  const MAX_ERRORS_SHOWN = 15;
+  const errorsToShow = errors.slice(0, MAX_ERRORS_SHOWN);
+  const truncatedCount = errors.length - errorsToShow.length;
+
+  const template = HtmlService.createTemplateFromFile(
+    "ClassReportResultDialog",
+  );
+  template.successCount = successCount;
+  template.className = className;
+  template.schoolYearLabel = schoolYearLabel;
+  template.errors = errorsToShow;
+  template.truncatedCount = truncatedCount;
+  template.pdfFolderUrl = context.pdfFolder.getUrl();
+
+  const htmlOutput = template.evaluate().setWidth(450).setHeight(460);
+  ui.showModalDialog(htmlOutput, "Boletins gerados");
 }
 
-/**
- * @param {GoogleAppsScript.Base.Ui} ui
- * @param {string} title
- * @param {string[]} years
- * @returns {{schoolYearLabel: string, className: string} | null}
- */
-function promptSchoolYearAndClass(ui, title, years) {
-  // ===================================
-  // SELECIONAR ANO LETIVO
-  // ===================================
-  const schoolYearLabel = promptFromNumberedList(
-    ui,
-    title,
-    "Selecione o ano letivo",
-    years,
+function executeStudentReportGeneration_(
+  ui,
+  schoolYearLabel,
+  className,
+  studentId,
+) {
+  const config = loadConfig();
+  const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
+  const classFile = getClassSpreadsheetFile(
+    yearFolder,
+    schoolYearLabel,
+    className,
   );
-  if (schoolYearLabel === null) return null;
+  const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
 
-  // ===================================
-  // SELECIONAR TURMA
-  // ===================================
-  const className = promptFromNumberedList(
-    ui,
-    title,
-    "Selecione a turma",
-    VALID_CLASSES.map(({ className }) => className),
-  );
-  if (className === null) return null;
+  const { found: foundSubjects } = checkClassSubjects(classSpreadsheet);
+  if (foundSubjects.length === 0) {
+    throw new Error("Nenhuma disciplina reconhecida nessa turma.");
+  }
 
-  return { schoolYearLabel, className };
+  if (!isStudentInClass(classSpreadsheet, studentId)) {
+    throw new Error(
+      `Matrícula ${studentId} não encontrada na turma "${className}" (${schoolYearLabel}).`,
+    );
+  }
+
+  const context = buildSingleStudentReportContext({
+    config,
+    classSpreadsheet,
+    schoolYearLabel,
+    className,
+    foundSubjects,
+    studentId,
+  });
+
+  const pdfUrl = generateReportForStudent({
+    studentId,
+    className,
+    foundSubjects,
+    context,
+  });
+
+  const template = HtmlService.createTemplateFromFile("ReportSuccessDialog");
+  template.studentId = studentId;
+  template.className = className;
+  template.schoolYearLabel = schoolYearLabel;
+  template.pdfUrl = pdfUrl;
+  template.pdfFolderUrl = context.pdfFolder.getUrl();
+
+  const htmlOutput = template.evaluate().setWidth(420).setHeight(360);
+  ui.showModalDialog(htmlOutput, "Boletim gerado");
 }
 
-/**
- * Executa uma ação utilizando o LockService do Apps Script.
- *
- * @param {(ui: GoogleAppsScript.Base.Ui) => void} action
- * @param {string} busyMessage
- */
 function withScriptLock(action, busyMessage) {
   const ui = SpreadsheetApp.getUi();
   const lock = LockService.getScriptLock();
@@ -1095,9 +1234,6 @@ function withScriptLock(action, busyMessage) {
   }
 }
 
-/**
- * Wrapper com lock para criar o ano letivo
- */
 function createSchoolYear() {
   withScriptLock(
     createSchoolYear_,
@@ -1105,12 +1241,8 @@ function createSchoolYear() {
   );
 }
 
-/**
- * @param {GoogleAppsScript.Base.Ui} ui
- */
 function createSchoolYear_(ui) {
   let config;
-
   try {
     config = loadConfig();
   } catch (e) {
@@ -1176,11 +1308,6 @@ function createSchoolYear_(ui) {
   );
 }
 
-/**
- * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
- * @param {string} className
- * @param {string} yearLabel
- */
 function fillClassHeaderPlaceholders(classSpreadsheet, className, yearLabel) {
   for (const sheet of classSpreadsheet.getSheets()) {
     replaceSheetHeaderText(sheet, "{{school_class}}", className);
@@ -1188,281 +1315,11 @@ function fillClassHeaderPlaceholders(classSpreadsheet, className, yearLabel) {
   }
 }
 
-/**
- * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
- * @param {string} placeholder
- * @param {string} value
- */
 function replaceSheetHeaderText(sheet, placeholder, value) {
   sheet
     .createTextFinder(placeholder)
     .matchEntireCell(false)
     .replaceAllWith(value);
-}
-
-/**
- * Wrapper para gerar o boletim de um único aluno
- */
-function generateStudentReport() {
-  withScriptLock(
-    generateStudentReport_,
-    "Já existe uma geração de boletim em andamento. Tente novamente em alguns instantes.",
-  );
-}
-
-/**
- * @param {GoogleAppsScript.Base.Ui} ui
- */
-function generateStudentReport_(ui) {
-  let config;
-
-  try {
-    config = loadConfig();
-  } catch (e) {
-    ui.alert(`Erro na configuração: ${e.message}`);
-    return;
-  }
-
-  let years;
-  try {
-    years = listSchoolYears(config);
-  } catch (e) {
-    ui.alert(`Erro: ${e.message}`);
-    return;
-  }
-
-  if (years.length === 0) {
-    ui.alert('Nenhum ano letivo encontrado dentro da pasta "Anos Letivos".');
-    return;
-  }
-
-  const selection = promptSchoolYearAndClass(
-    ui,
-    "Gerar boletim de um aluno",
-    years,
-  );
-
-  if (!selection) return;
-  const { schoolYearLabel, className } = selection;
-
-  const studentId = promptForValue(
-    ui,
-    "Gerar boletim de um aluno",
-    "Digite a matrícula do aluno:",
-  );
-
-  if (studentId === null) return;
-  if (!studentId) {
-    ui.alert("Matrícula não pode ser vazia.");
-    return;
-  }
-
-  try {
-    const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
-    const classFile = getClassSpreadsheetFile(
-      yearFolder,
-      schoolYearLabel,
-      className,
-    );
-    const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
-
-    const { found: foundSubjects, missing } =
-      checkClassSubjects(classSpreadsheet);
-    if (missing.length > 0) {
-      ui.alert(
-        `Atenção: as seguintes disciplinas não foram encontradas nessa turma e serão ignoradas no boletim:\n` +
-          `${missing.join(", ")}\n\nContinuando com as disciplinas disponíveis...`,
-      );
-    }
-
-    if (foundSubjects.length === 0) {
-      ui.alert(
-        "Nenhuma disciplina reconhecida nessa turma. Não é possível gerar o boletim.",
-      );
-      return;
-    }
-
-    if (!isStudentInClass(classSpreadsheet, studentId)) {
-      ui.alert(
-        `Matrícula ${studentId} não encontrada na turma "${className}" (${schoolYearLabel}).`,
-      );
-      return;
-    }
-
-    const context = buildSingleStudentReportContext({
-      config,
-      classSpreadsheet,
-      schoolYearLabel,
-      className,
-      foundSubjects,
-      studentId,
-    });
-    const pdfUrl = generateReportForStudent({
-      studentId,
-      className,
-      foundSubjects,
-      context,
-    });
-
-    const template = HtmlService.createTemplateFromFile("ReportSuccessDialog");
-    template.studentId = studentId;
-    template.className = className;
-    template.schoolYearLabel = schoolYearLabel;
-    template.pdfUrl = pdfUrl;
-    template.pdfFolderUrl = context.pdfFolder.getUrl();
-
-    const htmlOutput = template.evaluate().setWidth(420).setHeight(360);
-    ui.showModalDialog(htmlOutput, "Boletim gerado");
-  } catch (e) {
-    ui.alert(`Erro ao gerar boletim: ${e.message}`);
-  }
-}
-
-/**
- * Wrapper para gerar todos os boletins da turma
- */
-function generateClassReports() {
-  withScriptLock(
-    generateClassReports_,
-    "Já existe uma geração de boletins em andamento. Tente novamente em alguns instantes.",
-  );
-}
-
-/**
- * @param {GoogleAppsScript.Base.Ui} ui
- */
-function generateClassReports_(ui) {
-  let config;
-
-  try {
-    config = loadConfig();
-  } catch (e) {
-    ui.alert(`Erro na configuração: ${e.message}`);
-    return;
-  }
-
-  let years;
-  try {
-    years = listSchoolYears(config);
-  } catch (e) {
-    ui.alert(`Erro: ${e.message}`);
-    return;
-  }
-
-  if (years.length === 0) {
-    ui.alert('Nenhum ano letivo encontrado dentro da pasta "Anos Letivos".');
-    return;
-  }
-
-  const selection = promptSchoolYearAndClass(
-    ui,
-    "Gerar boletins de uma turma",
-    years,
-  );
-  if (!selection) return;
-  const { schoolYearLabel, className } = selection;
-
-  let classSpreadsheet;
-  let foundSubjects;
-  let studentIdRows;
-  let context;
-
-  try {
-    const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
-    const classFile = getClassSpreadsheetFile(
-      yearFolder,
-      schoolYearLabel,
-      className,
-    );
-    classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
-
-    const { found, missing } = checkClassSubjects(classSpreadsheet);
-    if (missing.length > 0) {
-      ui.alert(
-        `Atenção: as seguintes disciplinas não foram encontradas e serão ignoradas:\n` +
-          `${missing.join(", ")}\n\nContinuando com as disciplinas disponíveis...`,
-      );
-    }
-    if (found.length === 0) {
-      ui.alert(
-        "Nenhuma disciplina reconhecida nessa turma. Não é possível gerar boletins.",
-      );
-      return;
-    }
-    foundSubjects = found;
-
-    const firstSheet = findSubjectSheet(classSpreadsheet, foundSubjects[0]);
-    const lastRow = firstSheet.getLastRow();
-    studentIdRows =
-      lastRow >= FIRST_DATA_ROW
-        ? firstSheet
-            .getRange(FIRST_DATA_ROW, 1, lastRow - FIRST_DATA_ROW + 1, 1)
-            .getValues()
-        : [];
-
-    context = buildReportContext({
-      config,
-      classSpreadsheet,
-      schoolYearLabel,
-      className,
-      foundSubjects,
-    });
-  } catch (e) {
-    ui.alert(`Erro ao preparar a geração de boletins: ${e.message}`);
-    return;
-  }
-
-  let successCount = 0;
-  const errors = [];
-
-  const startTime = Date.now();
-
-  // limita o tempo de execução para 5 minutos
-  const MAX_RUNTIME_MS = 5 * 60 * 1000;
-
-  for (const [index, [studentId]] of studentIdRows.entries()) {
-    if (Date.now() - startTime > MAX_RUNTIME_MS) {
-      errors.push(
-        `Execução interrompida por tempo: restam alunos a partir da linha ${FIRST_DATA_ROW + index}.`,
-      );
-      break;
-    }
-
-    if (!studentId) continue;
-
-    const rowNumber = FIRST_DATA_ROW + index;
-    try {
-      generateReportForStudent({
-        studentId: String(studentId),
-        className,
-        foundSubjects,
-        context,
-      });
-      successCount++;
-    } catch (e) {
-      errors.push(`Linha ${rowNumber} (matrícula ${studentId}): ${e.message}`);
-    }
-
-    // pequena folga para evitar erros transitórios de cota no Drive
-    Utilities.sleep(200);
-  }
-
-  const MAX_ERRORS_SHOWN = 15;
-  const errorsToShow = errors.slice(0, MAX_ERRORS_SHOWN);
-  const truncatedCount = errors.length - errorsToShow.length;
-
-  const template = HtmlService.createTemplateFromFile(
-    "ClassReportResultDialog",
-  );
-  template.successCount = successCount;
-  template.className = className;
-  template.schoolYearLabel = schoolYearLabel;
-  template.errors = errorsToShow;
-  template.truncatedCount = truncatedCount;
-  template.pdfFolderUrl = context.pdfFolder.getUrl();
-
-  const htmlOutput = template.evaluate().setWidth(450).setHeight(460);
-  ui.showModalDialog(htmlOutput, "Boletins gerados");
 }
 
 // ============================================================
@@ -1569,16 +1426,12 @@ function generateReportForStudent({
 
   const fileName = `${studentId}_${personalData.name.replace(/\s+/g, "_").toLowerCase()}`;
   const docCopy = context.templateFile.makeCopy(fileName, context.tempFolder);
-
   const classInfo = VALID_CLASSES.find((c) => c.className === className);
   const date = new Date();
 
   try {
     const doc = DocumentApp.openById(docCopy.getId());
     const body = doc.getBody();
-
-    // =========================================================================
-    // DADOS PESSOAIS
 
     replacePlaceholder(body, "nome", personalData.name);
     replacePlaceholder(body, "matricula", studentId);
@@ -1612,7 +1465,6 @@ function generateReportForStudent({
       .setName(`${fileName}.pdf`);
 
     trashPreviousPdfVersions(context.pdfFolder, fileName, pdfFile.getId());
-
     return pdfFile.getUrl();
   } finally {
     docCopy.setTrashed(true);
@@ -1741,7 +1593,6 @@ function formatSex(sex) {
  */
 function formatDate(date, options) {
   if (!date || !(date instanceof Date)) return "";
-
   return new Intl.DateTimeFormat(DEFAULT_LOCALE, {
     dateStyle: "short",
     timeZone: DEFAULT_TIMEZONE,
