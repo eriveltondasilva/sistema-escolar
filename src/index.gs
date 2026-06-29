@@ -26,7 +26,9 @@
  *                             boletim individual/da turma)
  *   7. ReportGeneration.gs  — montagem do contexto e geração do PDF
  *                             do boletim em si
- *   8. Utils.gs             — formatação de valores e substituição de
+ *   8. Cache.gs              — armazenamento de dados em memória
+ *
+ *   9. Utils.gs             — formatação de valores e substituição de
  *                             placeholders no documento
  */
 
@@ -99,7 +101,14 @@
  * @property {"warning" | "error"} type
  * @property {string} message
  * @property {string} url
- *
+ */
+
+/**
+ * @typedef {Object} ActionResponse
+ * @property {boolean} success - Indica se a operação foi concluída com sucesso.
+ * @property {string} message - Mensagem amigável para exibir ao usuário.
+ * @property {string} [details] - Detalhes adicionais da operação (opcional).
+ * @property {Object} [data] - Objeto contendo dados retornados pela operação (opcional).
  */
 
 const DEFAULT_LOCALE = "pt-BR";
@@ -1301,12 +1310,12 @@ function withScriptLock(action, busyMessage) {
 
 function createSchoolYear() {
   withScriptLock(
-    createSchoolYear_,
+    createSchoolYearInternal_,
     "Já existe uma operação em andamento. Tente novamente em alguns instantes.",
   );
 }
 
-function createSchoolYear_(ui) {
+function createSchoolYearInternal_(ui) {
   let config;
   try {
     config = loadConfig();
@@ -1564,6 +1573,29 @@ function fillSubjectPlaceholders(body, subjectCode, grades) {
       format(grades[field]),
     );
   }
+}
+
+// ============================================================
+// ARQUIVO: CacheUtils.gs
+// ============================================================
+
+/**
+ * Wrapper simples para facilitar o uso do CacheService.
+ * @param {string} key Chave única para o item.
+ * @param {Function} fetcher Função que busca o dado caso o cache expire.
+ */
+function getOrFetch(key, fetcher) {
+  const DEFAULT_EXPIRATION_SECONDS = 6 * 60 * 60; // 6h
+  const cache = CacheService.getScriptCache();
+  const cachedValue = cache.get(key);
+
+  if (cachedValue) {
+    return JSON.parse(cachedValue);
+  }
+
+  const value = fetcher();
+  cache.put(key, JSON.stringify(value), DEFAULT_EXPIRATION_SECONDS);
+  return value;
 }
 
 // ============================================================
