@@ -94,6 +94,14 @@
  * @property {string} shift
  */
 
+/**
+ * @typedef {Object} Issues
+ * @property {"warning" | "error"} type
+ * @property {string} message
+ * @property {string} url
+ *
+ */
+
 const DEFAULT_LOCALE = "pt-BR";
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 const SCHOOL_YEAR_LABEL_PREFIX = "Ano Letivo - ";
@@ -808,14 +816,13 @@ function getPersonalData(studentId, context) {
 // ARQUIVO: Validation.gs
 // ============================================================
 
+// ============================================================
+// ARQUIVO: Validation.gs (REFATORADO PARA OPÇÃO 3)
+// ============================================================
+
 /**
  * Compara os alunos da aba "Resumo" de uma turma com o Cadastro de Alunos.
- *
- * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
- * @param {Map<string, StudentData>} registeredStudentsMap
- * @param {number|string} year
- * @param {string} className
- * @returns {string[]} Array de mensagens de aviso/erro
+ * Retorna objetos detalhados de diagnóstico.
  */
 function validateClassStudents(
   classSpreadsheet,
@@ -825,23 +832,31 @@ function validateClassStudents(
 ) {
   const issues = [];
   const students = getClassStudentsFromResumo(classSpreadsheet);
+  const ssUrl = classSpreadsheet.getUrl();
 
   if (students.length === 0) {
-    issues.push(
-      `[${year} / ${className}] Turma sem alunos cadastrados na aba "${SHEET_NAMES.SUMMARY}".`,
-    );
+    issues.push({
+      type: "error",
+      text: `[${year} / ${className}] Turma sem alunos cadastrados na aba "${SHEET_NAMES.SUMMARY}".`,
+      url: ssUrl,
+    });
     return issues;
   }
 
-  issues.push(...findDuplicateResumoIds(students, year, className));
+  const dupes = findDuplicateResumoIds(students, year, className);
+  issues.push(
+    ...dupes.map((msg) => ({ type: "error", text: msg, url: ssUrl })),
+  );
 
   for (const { studentId, name, row } of students) {
     const registeredStudent = registeredStudentsMap.get(studentId);
 
     if (registeredStudent === undefined) {
-      issues.push(
-        `[${year} / ${className} / Resumo, linha ${row}] Matrícula ${studentId} não consta no Cadastro de Alunos.`,
-      );
+      issues.push({
+        type: "warning",
+        text: `[${year} / ${className} / Resumo, linha ${row}] Matrícula ${studentId} não consta no Cadastro de Alunos.`,
+        url: ssUrl,
+      });
       continue;
     }
 
@@ -851,9 +866,11 @@ function validateClassStudents(
       }) !== 0;
 
     if (namesDiffer) {
-      issues.push(
-        `[${year} / ${className} / Resumo, linha ${row}] Nome "${name}" diverge do Cadastro ("${registeredStudent.name}") para a matrícula ${studentId}.`,
-      );
+      issues.push({
+        type: "warning",
+        text: `[${year} / ${className} / Resumo, linha ${row}] Nome "${name}" diverge do Cadastro ("${registeredStudent.name}") para a matrícula ${studentId}.`,
+        url: ssUrl,
+      });
     }
   }
 
@@ -861,37 +878,45 @@ function validateClassStudents(
 }
 
 /**
- * Verifica todas as configurações e estrutura de pastas.
+ * Verifica todas as configurações, estrutura de pastas e dados.
  * Disparada pelo menu do usuário.
  */
 function checkConfiguration() {
   const ui = SpreadsheetApp.getUi();
+  const issues = [];
   let config;
 
   try {
     config = loadConfig();
   } catch (e) {
-    ui.alert(`Erro: ${e.message}`);
+    issues.push({
+      type: "error",
+      text: `Configuração: ${e.message}`,
+      url: SpreadsheetApp.getActiveSpreadsheet().getUrl(),
+    });
+    showValidationDialog(issues);
     return;
   }
-
-  const issues = [];
 
   try {
     getReportTemplateFile(config);
   } catch (e) {
-    issues.push(e.message);
+    issues.push({ type: "error", text: e.message });
   }
+
   try {
     getClassTemplateFile(config);
   } catch (e) {
-    issues.push(e.message);
+    issues.push({ type: "error", text: e.message });
   }
 
   try {
     DriveApp.getFolderById(config.pdfsFolderId);
   } catch {
-    issues.push("PDFs: pasta não encontrada ou sem acesso.");
+    issues.push({
+      type: "error",
+      text: "PDFs: pasta não encontrada ou sem acesso.",
+    });
   }
 
   let registeredStudentsMap;
@@ -899,34 +924,54 @@ function checkConfiguration() {
     const registrationSheet = SpreadsheetApp.openById(
       config.studentsSpreadsheetId,
     );
+    const regUrl = registrationSheet.getUrl();
+
     if (!registrationSheet.getSheetByName(SHEET_NAMES.STUDENTS)) {
-      issues.push(
-        `Cadastro de Alunos: a aba "${SHEET_NAMES.STUDENTS}" não existe.`,
-      );
+      issues.push({
+        type: "error",
+        text: `Cadastro de Alunos: a aba "${SHEET_NAMES.STUDENTS}" não existe.`,
+        url: regUrl,
+      });
     }
     if (!registrationSheet.getSheetByName(SHEET_NAMES.GUARDIANS)) {
-      issues.push(
-        `Cadastro de Alunos: a aba "${SHEET_NAMES.GUARDIANS}" não existe.`,
-      );
+      issues.push({
+        type: "error",
+        text: `Cadastro de Alunos: a aba "${SHEET_NAMES.GUARDIANS}" não existe.`,
+        url: regUrl,
+      });
     }
 
     registeredStudentsMap = loadStudentsMap(registrationSheet);
-    issues.push(...findDuplicateStudentIds(registrationSheet));
+
+    const dupes = findDuplicateStudentIds(registrationSheet);
+    issues.push(
+      ...dupes.map((msg) => ({ type: "error", text: msg, url: regUrl })),
+    );
   } catch (e) {
-    issues.push(`Cadastro de Alunos: ${e.message}`);
+    issues.push({ type: "error", text: `Cadastro de Alunos: ${e.message}` });
   }
 
   let years = [];
   try {
     years = listSchoolYears(config);
   } catch (e) {
-    issues.push(e.message);
+    issues.push({ type: "error", text: e.message });
   }
 
   if (years.length === 0) {
-    issues.push(
-      'Nenhuma pasta de ano letivo encontrada dentro de "Anos Letivos".',
-    );
+    try {
+      const rootFolder = DriveApp.getFolderById(config.schoolYearsFolderId);
+      issues.push({
+        type: "error",
+        text: 'Nenhuma pasta de ano letivo encontrada dentro de "Anos Letivos".',
+        url: rootFolder.getUrl(),
+      });
+    } catch {
+      issues.push({
+        type: "error",
+        text: 'Nenhuma pasta de ano letivo encontrada dentro de "Anos Letivos".',
+      });
+    }
   }
 
   for (const year of years) {
@@ -934,7 +979,7 @@ function checkConfiguration() {
     try {
       yearFolder = getSchoolYearFolder(config, year);
     } catch (e) {
-      issues.push(e.message);
+      issues.push({ type: "error", text: e.message });
       continue;
     }
 
@@ -943,7 +988,11 @@ function checkConfiguration() {
       try {
         classFile = getClassSpreadsheetFile(yearFolder, year, className);
       } catch (e) {
-        issues.push(`[${year}] ${e.message}`);
+        issues.push({
+          type: "error",
+          text: `[${year}] ${e.message}`,
+          url: yearFolder.getUrl(),
+        });
         continue;
       }
 
@@ -951,17 +1000,22 @@ function checkConfiguration() {
       try {
         classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
       } catch (e) {
-        issues.push(
-          `[${year} / ${className}] Erro ao abrir a planilha: ${e.message}`,
-        );
+        issues.push({
+          type: "error",
+          text: `[${year} / ${className}] Erro ao abrir a planilha: ${e.message}`,
+          url: classFile.getUrl(),
+        });
         continue;
       }
 
+      const ssUrl = classSpreadsheet.getUrl();
       const { missing } = checkClassSubjects(classSpreadsheet);
       if (missing.length > 0) {
-        issues.push(
-          `[${year} / ${className}] Disciplinas faltando: ${missing.join(", ")}`,
-        );
+        issues.push({
+          type: "warning",
+          text: `[${year} / ${className}] Disciplinas faltando (serão ignoradas): ${missing.join(", ")}`,
+          url: ssUrl,
+        });
       }
 
       if (registeredStudentsMap) {
@@ -977,16 +1031,21 @@ function checkConfiguration() {
     }
   }
 
-  if (issues.length > 0) {
-    ui.alert(
-      `Foram encontrados ${issues.length} problema(s):\n\n${issues.join("\n")}`,
-    );
-    return;
-  }
+  showValidationDialog(issues);
+}
 
-  ui.alert(
-    "Tudo certo! Estrutura, disciplinas e alunos validados em todos os anos letivos.",
-  );
+/**
+ * Renderiza o dialog HTML com os resultados.
+ */
+function showValidationDialog(issues) {
+  const ui = SpreadsheetApp.getUi();
+  const template = HtmlService.createTemplateFromFile("ValidationResultDialog");
+
+  // Passamos os dados estruturados para o frontend
+  template.issues = issues;
+
+  const htmlOutput = template.evaluate().setWidth(600).setHeight(520);
+  ui.showModalDialog(htmlOutput, "Diagnóstico do Sistema");
 }
 
 // ============================================================
