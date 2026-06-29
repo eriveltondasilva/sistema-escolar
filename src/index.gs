@@ -1051,9 +1051,10 @@ function generateClassReports() {
 }
 
 /**
- * Endpoint para o Alpine.js buscar matrículas ao selecionar uma turma.
+ * Retorna a lista de objetos contendo ID e Nome dos alunos mapeados da aba Resumo.
+ * Endpoint consumido pelo Alpine.js para alimentar o datalist de autocompletar.
  */
-function getStudentIdsForClass(schoolYearLabel, className) {
+function getStudentsDataForClass(schoolYearLabel, className) {
   try {
     const config = loadConfig();
     const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
@@ -1065,7 +1066,12 @@ function getStudentIdsForClass(schoolYearLabel, className) {
     const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
 
     const students = getClassStudentsFromResumo(classSpreadsheet);
-    return students.map((s) => s.studentId);
+
+    // Retorna uma array de objetos [{studentId: "...", name: "..."}, ...]
+    return students.map((s) => ({
+      studentId: s.studentId,
+      name: s.name,
+    }));
   } catch (e) {
     throw new Error(e.message);
   }
