@@ -89,10 +89,10 @@
 
 const DEFAULT_LOCALE = "pt-BR";
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
+const SCHOOL_YEAR_LABEL_PREFIX = "Ano Letivo - ";
 
-// Início da primeira linha de configuração na aba "Configuração"
 const CONFIG_START_ROW = 4;
-// primeira linha de dados nas abas de turma/disciplina
+const SUMMARY_FIRST_DATA_ROW = 4;
 const FIRST_DATA_ROW = 5;
 
 const GRADE_COLUMNS_COUNT = 17;
@@ -111,6 +111,29 @@ const VALID_SUBJECTS = [
   { name: "Língua Inglesa", code: "ING" },
   { name: "Língua Portuguesa", code: "LPO" },
   { name: "Matemática", code: "MAT" },
+];
+
+/** @type {PlaceholderField[]} */
+const SUBJECT_PLACEHOLDER_FIELDS = [
+  { suffix: "n1", field: "grade1Q", format: formatGrade },
+  { suffix: "f1", field: "absences1Q", format: formatValue },
+  { suffix: "n2", field: "grade2Q", format: formatGrade },
+  { suffix: "f2", field: "absences2Q", format: formatValue },
+  { suffix: "rs1", field: "makeup1S", format: formatGrade },
+  { suffix: "ms1", field: "average1S", format: formatGrade },
+  { suffix: "n3", field: "grade3Q", format: formatGrade },
+  { suffix: "f3", field: "absences3Q", format: formatValue },
+  { suffix: "n4", field: "grade4Q", format: formatGrade },
+  { suffix: "f4", field: "absences4Q", format: formatValue },
+  { suffix: "rs2", field: "makeup2S", format: formatGrade },
+  { suffix: "ms2", field: "average2S", format: formatGrade },
+  { suffix: "mf", field: "finalGrade", format: formatGrade },
+  { suffix: "tf", field: "totalAbsences", format: formatValue },
+  {
+    suffix: "sf",
+    field: "status",
+    format: (status) => status.slice(3).toUpperCase() ?? "",
+  },
 ];
 
 const CONFIG_KEY_MAP = {
@@ -163,25 +186,6 @@ const GRADE_COLUMNS = {
   finalGrade: 15,
   status: 16,
 };
-
-/** @type {PlaceholderField[]} */
-const SUBJECT_PLACEHOLDER_FIELDS = [
-  { suffix: "nota1", field: "grade1Q", format: formatGrade },
-  { suffix: "falt1", field: "absences1Q", format: formatValue },
-  { suffix: "nota2", field: "grade2Q", format: formatGrade },
-  { suffix: "falt2", field: "absences2Q", format: formatValue },
-  { suffix: "rec1", field: "makeup1S", format: formatGrade },
-  { suffix: "media1", field: "average1S", format: formatGrade },
-  { suffix: "nota3", field: "grade3Q", format: formatGrade },
-  { suffix: "falt3", field: "absences3Q", format: formatValue },
-  { suffix: "nota4", field: "grade4Q", format: formatGrade },
-  { suffix: "falt4", field: "absences4Q", format: formatValue },
-  { suffix: "rec2", field: "makeup2S", format: formatGrade },
-  { suffix: "media2", field: "average2S", format: formatGrade },
-  { suffix: "faltastotal", field: "totalAbsences", format: formatValue },
-  { suffix: "final", field: "finalGrade", format: formatGrade },
-  { suffix: "situacao", field: "status", format: (status) => status ?? "" },
-];
 
 /**
  * Lê e valida as configurações da aba "Configuração".
@@ -435,17 +439,22 @@ function getClassStudentsFromResumo(classSpreadsheet) {
   if (!resumoSheet) return [];
 
   const lastRow = resumoSheet.getLastRow();
-  if (lastRow < FIRST_DATA_ROW) return [];
+  if (lastRow < SUMMARY_FIRST_DATA_ROW) return [];
 
   const values = resumoSheet
-    .getRange(FIRST_DATA_ROW, 1, lastRow - FIRST_DATA_ROW + 1, 2)
+    .getRange(
+      SUMMARY_FIRST_DATA_ROW,
+      1,
+      lastRow - SUMMARY_FIRST_DATA_ROW + 1,
+      2,
+    )
     .getValues();
 
   return values
     .map(([studentId, name], index) => ({
       studentId: String(studentId ?? "").trim(),
       name: String(name ?? "").trim(),
-      row: FIRST_DATA_ROW + index,
+      row: SUMMARY_FIRST_DATA_ROW + index,
     }))
     .filter(({ studentId }) => studentId.length > 0);
 }
@@ -492,7 +501,7 @@ function loadStudentsMap(registrationSheet) {
       name: String(row[STUDENT_COLUMNS.name] ?? "").trim(),
       address: row[STUDENT_COLUMNS.address],
       nationality: row[STUDENT_COLUMNS.nationality],
-      birthDate: formatLongDate(row[STUDENT_COLUMNS.birthDate]),
+      birthDate: formatDate(row[STUDENT_COLUMNS.birthDate]),
       sex: row[STUDENT_COLUMNS.sex],
     });
   }
@@ -624,7 +633,7 @@ function loadSingleStudentMap(registrationSheet, studentId) {
     name: String(row[STUDENT_COLUMNS.name] ?? "").trim(),
     address: row[STUDENT_COLUMNS.address],
     nationality: row[STUDENT_COLUMNS.nationality],
-    birthDate: formatLongDate(row[STUDENT_COLUMNS.birthDate]),
+    birthDate: formatDate(row[STUDENT_COLUMNS.birthDate]),
     sex: row[STUDENT_COLUMNS.sex],
   });
 
@@ -1092,7 +1101,7 @@ function createSchoolYear_(ui) {
     return;
   }
 
-  const schoolYearLabel = `Ano Letivo — ${yearInput}`;
+  const schoolYearLabel = `${SCHOOL_YEAR_LABEL_PREFIX}${yearInput}`;
   if (schoolYearFolderExists(config, schoolYearLabel)) {
     ui.alert(
       `O ano letivo "${schoolYearLabel}" já existe. Nenhuma alteração foi feita.`,
@@ -1377,7 +1386,7 @@ function generateClassReports_(ui) {
   const errors = [];
 
   const startTime = Date.now();
-  const MAX_RUNTIME_MS = 5 * 60 * 1_000; // safety margin before the 6-minute limit
+  const MAX_RUNTIME_MS = 5 * 60 * 1000; // safety margin before the 6-minute limit
 
   for (const [index, [studentId]] of studentIdRows.entries()) {
     if (Date.now() - startTime > MAX_RUNTIME_MS) {
@@ -1520,23 +1529,36 @@ function generateReportForStudent({
   const gradesData = getGradesForStudent(studentId, foundSubjects, context);
 
   const fileName = `${studentId}_${personalData.name.replace(/\s+/g, "_").toLowerCase()}`;
-
-  // A cópia de trabalho nasce em _temp, não na pasta final do PDF
   const docCopy = context.templateFile.makeCopy(fileName, context.tempFolder);
 
   try {
     const doc = DocumentApp.openById(docCopy.getId());
     const body = doc.getBody();
 
+    const date = new Date();
+
+    // =========================================================================
+    // DADOS PESSOAIS
+
     replacePlaceholder(body, "nome", personalData.name);
+    replacePlaceholder(body, "matricula", studentId);
     replacePlaceholder(body, "filiacao", personalData.guardianNames);
     replacePlaceholder(body, "endereco", personalData.address);
+
     replacePlaceholder(body, "data_nascimento", personalData.birthDate);
     replacePlaceholder(body, "nacionalidade", personalData.nationality);
+    replacePlaceholder(body, "sexo", formatSex(personalData.sex));
+
+    replacePlaceholder(body, "etapa", "Ensino Fundaental II");
+
     replacePlaceholder(body, "serie", className);
-    replacePlaceholder(body, "turno", "");
+    replacePlaceholder(body, "turma", "Única");
+    replacePlaceholder(body, "turno", "Vespertino");
+
     replacePlaceholder(body, "ano_letivo", String(context.yearNumber));
-    replacePlaceholder(body, "data_entrega", formatLongDate(new Date()));
+
+    replacePlaceholder(body, "data_emissao", formatDate(date));
+    replacePlaceholder(body, "hora_emissao", date.toLocaleTimeString());
 
     for (const subject of foundSubjects) {
       const grades = gradesData[subject.name] ?? {};
@@ -1544,10 +1566,8 @@ function generateReportForStudent({
     }
 
     doc.saveAndClose();
-    const pdfBlob = docCopy.getAs("application/pdf");
 
-    // Cria o PDF novo primeiro e só depois remove os antigos: se algo falhar
-    // antes daqui, a versão anterior do boletim continua intacta na pasta.
+    const pdfBlob = docCopy.getAs("application/pdf");
     const pdfFile = context.pdfFolder
       .createFile(pdfBlob)
       .setName(`${fileName}.pdf`);
@@ -1587,7 +1607,11 @@ function trashPreviousPdfVersions(pdfFolder, fileName, keepFileId) {
  */
 function fillSubjectPlaceholders(body, subjectCode, grades) {
   for (const { suffix, field, format } of SUBJECT_PLACEHOLDER_FIELDS) {
-    replacePlaceholder(body, `${subjectCode}_${suffix}`, format(grades[field]));
+    replacePlaceholder(
+      body,
+      `${subjectCode}_${suffix}`.toLowerCase(),
+      format(grades[field]),
+    );
   }
 }
 
@@ -1654,8 +1678,21 @@ function formatGrade(value) {
  */
 function formatValue(value) {
   return value === "" || value === null || value === undefined
-    ? "---"
+    ? "--"
     : String(value);
+}
+
+/**
+ *
+ * @param {string} sex
+ * @return {string}
+ */
+function formatSex(sex) {
+  const gender = {
+    F: "Feminino",
+    M: "Masculino",
+  };
+  return gender[sex] ?? "";
 }
 
 /**
@@ -1665,11 +1702,11 @@ function formatValue(value) {
  * @param {Intl.DateTimeFormatOptions} [options]
  * @return {string}
  */
-function formatLongDate(date, options) {
+function formatDate(date, options) {
   if (!date || !(date instanceof Date)) return "";
 
   return new Intl.DateTimeFormat(DEFAULT_LOCALE, {
-    dateStyle: "long",
+    dateStyle: "short",
     timeZone: DEFAULT_TIMEZONE,
     ...options,
   }).format(date);
