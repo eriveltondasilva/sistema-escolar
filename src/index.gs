@@ -10,26 +10,49 @@
  * migrar para múltiplos arquivos, basta copiar cada bloco demarcado por
  * "ARQUIVO: nome.gs" para um arquivo novo com esse nome, na mesma ordem.
  *
- *   1. Config.gs           — tipos (JSDoc), constantes e leitura da
- *                             aba "Configuração"
- *   2. Menu.gs              — menu da planilha (onOpen)
- *   3. DriveLookup.gs       — resolução de pastas/arquivos no Drive
- *                             (anos letivos, planilhas de turma, modelos,
- *                             pasta de PDFs)
- *   4. DataAccess.gs        — leitura de dados (Alunos, Responsáveis,
- *                             notas por disciplina); usada tanto pela
- *                             validação quanto pela geração de boletins
- *   5. Validation.gs        — regras de negócio de validação cruzada
- *                             (checkConfiguration)
- *   6. Actions.gs           — handlers do menu e orquestração de UI
- *                             (prompts, lock, criar ano letivo, gerar
- *                             boletim individual/da turma)
- *   7. ReportGeneration.gs  — montagem do contexto e geração do PDF
- *                             do boletim em si
- *   8. Cache.gs              — armazenamento de dados em memória
+ *    1. Config.gs           — tipos (JSDoc), constantes e leitura da
+ *                              aba "Configuração"
+ *    2. Menu.gs              — menu da planilha (onOpen)
+ *    3. DriveLookup.gs       — resolução de pastas/arquivos no Drive
+ *                              (anos letivos, planilhas de turma, modelos,
+ *                              pasta de PDFs)
+ *    4. DataAccess.gs        — leitura de dados (Alunos, Responsáveis,
+ *                              notas por disciplina); usada tanto pela
+ *                              validação quanto pela geração de boletins
+ *    5. Validation.gs        — regras de negócio de validação cruzada
+ *                              (checkConfiguration)
+ *    6. Actions.gs           — handlers do menu e orquestração de UI
+ *                              (prompts, lock, criar ano letivo, gerar
+ *                              boletim individual/da turma)
+ *    7. ReportGeneration.gs  — montagem do contexto e geração do PDF
+ *                              do boletim em si
+ *    8. CacheUtils.gs        — armazenamento de dados em memória
+ *    9. Utils.gs             — formatação de valores e substituição de
+ *                              placeholders no documento
  *
- *   9. Utils.gs             — formatação de valores e substituição de
- *                             placeholders no documento
+ * PADRÃO DE TRATAMENTO DE ERRO
+ * --------------------------------
+ * Este projeto tem três categorias de operação, e cada uma comunica
+ * sucesso/erro de um jeito diferente — de propósito, não por descuido:
+ *
+ *   A. Menu → ui.alert (createSchoolYear, checkConfiguration)
+ *      Usam ActionResponse ({success, message, details}) como retorno
+ *      interno entre a função "_Internal" e quem mostra o alert. Centraliza
+ *      a apresentação em um único `ui.alert` por fluxo, em vez de espalhar
+ *      chamadas de alert pelo meio da lógica de negócio.
+ *
+ *   B. Dialog HTML → google.script.run (executeStudentReportGeneration,
+ *      getStudentsDataForClass, executeClassReportsGeneration)
+ *      Mantêm `throw new Error(...)`. É o idioma nativo do Apps Script
+ *      para esse canal — o client já consome isso via withFailureHandler.
+ *      Embrulhar em ActionResponse aqui obrigaria o client a checar
+ *      `result.success` manualmente, quebrando o padrão já usado no
+ *      SelectYearClassDialog.html e adicionando boilerplate sem ganho.
+ *
+ *   C. Operação em lote (checkConfiguration, geração de boletins da turma)
+ *      Usam Issues[] ({type, text, url}) — um relatório agregado, não uma
+ *      resposta única de sucesso/falha. Um erro individual não interrompe
+ *      o lote; todos são coletados e exibidos juntos no final.
  */
 
 // ============================================================
@@ -97,18 +120,21 @@
  */
 
 /**
- * @typedef {Object} Issues
+ * @typedef {Object} Issue
  * @property {"warning" | "error"} type
- * @property {string} message
- * @property {string} url
+ * @property {string} text
+ * @property {string} [url]
  */
 
 /**
+ * Resultado padronizado para operações disparadas pelo menu, onde o
+ * destino final é um `ui.alert` (categoria A — ver cabeçalho do arquivo).
+ *
  * @typedef {Object} ActionResponse
  * @property {boolean} success - Indica se a operação foi concluída com sucesso.
  * @property {string} message - Mensagem amigável para exibir ao usuário.
  * @property {string} [details] - Detalhes adicionais da operação (opcional).
- * @property {Object} [data] - Objeto contendo dados retornados pela operação (opcional).
+ * @property {Object} [data] - Dados retornados pela operação (opcional).
  */
 
 const DEFAULT_LOCALE = "pt-BR";
@@ -120,6 +146,9 @@ const SUMMARY_FIRST_DATA_ROW = 4;
 const FIRST_DATA_ROW = 5;
 
 const GRADE_COLUMNS_COUNT = 17;
+const MAX_RUNTIME_MS = 5 * 60 * 1000;
+const MAX_ERRORS_SHOWN = 15;
+const SCRIPT_LOCK_TIMEOUT_MS = 5000;
 
 /**
  * Turmas únicas, não insira duas vezes o mesmo className.
@@ -362,13 +391,22 @@ function getClassSpreadsheetFile(yearFolder, schoolYearLabel, className) {
  * @returns {GoogleAppsScript.Drive.File}
  */
 function getReportTemplateFile(config) {
+  let file;
   try {
-    return DriveApp.getFileById(config.reportTemplateFileId);
+    file = DriveApp.getFileById(config.reportTemplateFileId);
   } catch {
     throw new Error(
       `Modelo de boletim não encontrado (ID: ${config.reportTemplateFileId}).`,
     );
   }
+
+  if (file.getMimeType() !== MimeType.GOOGLE_DOCS) {
+    throw new Error(
+      `O modelo de boletim (ID: ${config.reportTemplateFileId}) não é um Google Docs.`,
+    );
+  }
+
+  return file;
 }
 
 /**
@@ -376,13 +414,22 @@ function getReportTemplateFile(config) {
  * @returns {GoogleAppsScript.Drive.File}
  */
 function getClassTemplateFile(config) {
+  let file;
   try {
-    return DriveApp.getFileById(config.classTemplateFileId);
+    file = DriveApp.getFileById(config.classTemplateFileId);
   } catch {
     throw new Error(
       `Modelo de planilha de turma não encontrado (ID: ${config.classTemplateFileId}).`,
     );
   }
+
+  if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) {
+    throw new Error(
+      `O modelo de planilha de turma (ID: ${config.classTemplateFileId}) não é uma planilha do Google Sheets.`,
+    );
+  }
+
+  return file;
 }
 
 /**
@@ -567,6 +614,10 @@ function findDuplicateStudentIds(registrationSheet) {
 /**
  * Lê a aba "Responsáveis" do Cadastro e agrupa por matrícula.
  *
+ * Linhas com matrícula preenchida mas nome de responsável vazio são
+ * descartadas — um nome vazio no array quebraria a concatenação feita por
+ * `formatGuardianNames` (ex: "Maria e " em vez de só "Maria").
+ *
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} registrationSheet
  * @returns {Map<string, string[]>}
  */
@@ -581,9 +632,9 @@ function loadGuardiansMap(registrationSheet) {
   const validRows = rows
     .map((row) => ({
       studentId: String(row[GUARDIAN_COLUMNS.studentId] ?? "").trim(),
-      name: row[GUARDIAN_COLUMNS.name],
+      name: String(row[GUARDIAN_COLUMNS.name] ?? "").trim(),
     }))
-    .filter(({ studentId }) => studentId.length > 0);
+    .filter(({ studentId, name }) => studentId.length > 0 && name.length > 0);
 
   const grouped = Map.groupBy(validRows, ({ studentId }) => studentId);
 
@@ -691,11 +742,15 @@ function loadSingleStudentGuardiansMap(registrationSheet, studentId) {
     .matchEntireCell(true)
     .findAll();
 
-  const names = matches.map((cell) =>
-    guardiansSheet
-      .getRange(cell.getRow(), GUARDIAN_COLUMNS.name + 1, 1, 1)
-      .getValue(),
-  );
+  const names = matches
+    .map((cell) =>
+      String(
+        guardiansSheet
+          .getRange(cell.getRow(), GUARDIAN_COLUMNS.name + 1, 1, 1)
+          .getValue() ?? "",
+      ).trim(),
+    )
+    .filter((name) => name.length > 0);
 
   if (names.length > 0) map.set(studentId, names);
   return map;
@@ -823,15 +878,21 @@ function getPersonalData(studentId, context) {
 
 // ============================================================
 // ARQUIVO: Validation.gs
-// ============================================================
-
-// ============================================================
-// ARQUIVO: Validation.gs (REFATORADO PARA OPÇÃO 3)
+// ------------------------------------------------------------
+// Categoria C de tratamento de erro (ver cabeçalho do arquivo): cada
+// problema encontrado é coletado como um Issue ({type, text, url}) num
+// relatório agregado, em vez de interromper a verificação no primeiro erro.
 // ============================================================
 
 /**
  * Compara os alunos da aba "Resumo" de uma turma com o Cadastro de Alunos.
  * Retorna objetos detalhados de diagnóstico.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} classSpreadsheet
+ * @param {Map<string, StudentData>} registeredStudentsMap
+ * @param {string} year
+ * @param {string} className
+ * @returns {Issue[]}
  */
 function validateClassStudents(
   classSpreadsheet,
@@ -888,10 +949,12 @@ function validateClassStudents(
 
 /**
  * Verifica todas as configurações, estrutura de pastas e dados.
- * Disparada pelo menu do usuário.
+ * Disparada pelo menu do usuário. Cada problema encontrado é acumulado em
+ * `issues[]` e exibido ao final em `ValidationResultDialog.html` — nenhum
+ * problema individual interrompe a verificação dos demais.
  */
 function checkConfiguration() {
-  const ui = SpreadsheetApp.getUi();
+  /** @type {Issue[]} */
   const issues = [];
   let config;
 
@@ -1045,12 +1108,12 @@ function checkConfiguration() {
 
 /**
  * Renderiza o dialog HTML com os resultados.
+ * @param {Issue[]} issues
  */
 function showValidationDialog(issues) {
   const ui = SpreadsheetApp.getUi();
   const template = HtmlService.createTemplateFromFile("ValidationResultDialog");
 
-  // Passamos os dados estruturados para o frontend
   template.issues = issues;
 
   const htmlOutput = template.evaluate().setWidth(600).setHeight(520);
@@ -1059,6 +1122,11 @@ function showValidationDialog(issues) {
 
 // ============================================================
 // ARQUIVO: Actions.gs
+// ------------------------------------------------------------
+// Handlers do menu (categoria A — usam ActionResponse e terminam em
+// ui.alert) e handlers chamados pelos dialogs via google.script.run
+// (categoria B — usam throw, consumido por withFailureHandler no client).
+// Ver cabeçalho do arquivo para a explicação completa do padrão.
 // ============================================================
 
 /**
@@ -1072,6 +1140,34 @@ function promptForValue(ui, title, message) {
   if (response.getSelectedButton() !== ui.Button.OK) return null;
   return response.getResponseText().trim();
 }
+
+/**
+ * Executa `action` sob um lock de script, evitando que duas execuções do
+ * mesmo fluxo corram em paralelo (ex: dois usuários gerando boletins da
+ * mesma turma ao mesmo tempo).
+ *
+ * @param {(ui: GoogleAppsScript.Base.Ui) => void} action
+ * @param {string} busyMessage
+ */
+function withScriptLock(action, busyMessage) {
+  const ui = SpreadsheetApp.getUi();
+  const lock = LockService.getScriptLock();
+
+  if (!lock.tryLock(SCRIPT_LOCK_TIMEOUT_MS)) {
+    ui.alert(busyMessage);
+    return;
+  }
+
+  try {
+    action(ui);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ------------------------------------------------------------
+// Categoria A: menu → ActionResponse → ui.alert
+// ------------------------------------------------------------
 
 /**
  * Abre o diálogo unificado de seleção de Ano Letivo e Turma.
@@ -1118,31 +1214,131 @@ function generateClassReports() {
   openSelectYearClassDialog("class");
 }
 
+function createSchoolYear() {
+  withScriptLock((ui) => {
+    const result = createSchoolYearInternal_(ui);
+    ui.alert(result.message);
+  }, "Já existe uma operação em andamento. Tente novamente em alguns instantes.");
+}
+
 /**
- * Retorna a lista de objetos contendo ID e Nome dos alunos mapeados da aba Resumo.
- * Endpoint consumido pelo Alpine.js para alimentar o datalist de autocompletar.
+ * Cria a estrutura de um novo ano letivo (pasta + planilhas de turma a
+ * partir do modelo). Não chama `ui.alert` diretamente — devolve um
+ * `ActionResponse` para que `createSchoolYear` decida a apresentação.
+ *
+ * @param {GoogleAppsScript.Base.Ui} ui
+ * @returns {ActionResponse}
+ */
+function createSchoolYearInternal_(ui) {
+  let config;
+  try {
+    config = loadConfig();
+  } catch (e) {
+    return { success: false, message: `Erro na configuração: ${e.message}` };
+  }
+
+  const yearInput = promptForValue(
+    ui,
+    "Criar ano letivo",
+    "Digite o ano letivo (ex: 2026):",
+  );
+  if (yearInput === null) {
+    return { success: false, message: "Operação cancelada pelo usuário." };
+  }
+
+  if (!/^\d{4}$/.test(yearInput)) {
+    return {
+      success: false,
+      message: `"${yearInput}" não é um ano válido. Digite 4 dígitos, ex: 2026.`,
+    };
+  }
+
+  const schoolYearLabel = `${SCHOOL_YEAR_LABEL_PREFIX}${yearInput}`;
+  if (schoolYearFolderExists(config, schoolYearLabel)) {
+    return {
+      success: false,
+      message: `O ano letivo "${schoolYearLabel}" já existe. Nenhuma alteração foi feita.`,
+    };
+  }
+
+  let classTemplateFile;
+  try {
+    classTemplateFile = getClassTemplateFile(config);
+  } catch (e) {
+    return { success: false, message: `Erro: ${e.message}` };
+  }
+
+  const rootFolder = DriveApp.getFolderById(config.schoolYearsFolderId);
+  const yearFolder = rootFolder.createFolder(schoolYearLabel);
+  const createdClasses = [];
+  const errors = [];
+
+  for (const { className } of VALID_CLASSES) {
+    try {
+      const classFile = classTemplateFile.makeCopy(className, yearFolder);
+      const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
+      fillClassHeaderPlaceholders(classSpreadsheet, className, yearInput);
+      createdClasses.push(className);
+    } catch (e) {
+      errors.push(`${className}: ${e.message}`);
+    }
+  }
+
+  if (errors.length > 0) {
+    yearFolder.setTrashed(true);
+    return {
+      success: false,
+      message: `Não foi possível criar o ano letivo "${schoolYearLabel}". Nenhuma alteração foi feita.`,
+      details: errors.join("\n"),
+    };
+  }
+
+  return {
+    success: true,
+    message: `Ano letivo "${schoolYearLabel}" criado com ${createdClasses.length} turma(s): ${createdClasses.join(", ")}.`,
+    data: { schoolYearLabel, createdClasses },
+  };
+}
+
+function fillClassHeaderPlaceholders(classSpreadsheet, className, yearLabel) {
+  for (const sheet of classSpreadsheet.getSheets()) {
+    replaceSheetHeaderText(sheet, "{{school_class}}", className);
+    replaceSheetHeaderText(sheet, "{{school_year}}", yearLabel);
+  }
+}
+
+function replaceSheetHeaderText(sheet, placeholder, value) {
+  sheet
+    .createTextFinder(placeholder)
+    .matchEntireCell(false)
+    .replaceAllWith(value);
+}
+
+// ------------------------------------------------------------
+// Categoria B: dialog HTML → google.script.run → throw / return
+// ------------------------------------------------------------
+
+/**
+ * Retorna a lista de objetos contendo ID e Nome dos alunos mapeados da aba
+ * Resumo. Endpoint consumido pelo Alpine.js para alimentar o datalist de
+ * autocompletar.
  */
 function getStudentsDataForClass(schoolYearLabel, className) {
-  try {
-    const config = loadConfig();
-    const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
-    const classFile = getClassSpreadsheetFile(
-      yearFolder,
-      schoolYearLabel,
-      className,
-    );
-    const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
+  const config = loadConfig();
+  const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
+  const classFile = getClassSpreadsheetFile(
+    yearFolder,
+    schoolYearLabel,
+    className,
+  );
+  const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
 
-    const students = getClassStudentsFromResumo(classSpreadsheet);
+  const students = getClassStudentsFromResumo(classSpreadsheet);
 
-    // Retorna uma array de objetos [{studentId: "...", name: "..."}, ...]
-    return students.map((s) => ({
-      studentId: s.studentId,
-      name: s.name,
-    }));
-  } catch (e) {
-    throw new Error(e.message);
-  }
+  return students.map((s) => ({
+    studentId: s.studentId,
+    name: s.name,
+  }));
 }
 
 function executeClassReportsGeneration(schoolYearLabel, className) {
@@ -1152,9 +1348,11 @@ function executeClassReportsGeneration(schoolYearLabel, className) {
 }
 
 function executeStudentReportGeneration(schoolYearLabel, className, studentId) {
-  if (!studentId) throw new Error("Matrícula não pode ser vazia.");
+  const trimmedId = String(studentId ?? "").trim();
+  if (!trimmedId) throw new Error("Matrícula não pode ser vazia.");
+
   withScriptLock((ui) => {
-    executeStudentReportGeneration_(ui, schoolYearLabel, className, studentId);
+    executeStudentReportGeneration_(ui, schoolYearLabel, className, trimmedId);
   }, "Já existe uma geração de boletim em andamento. Tente novamente em alguns instantes.");
 }
 
@@ -1194,7 +1392,6 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className) {
   let successCount = 0;
   const errors = [];
   const startTime = Date.now();
-  const MAX_RUNTIME_MS = 5 * 60 * 1000;
 
   for (const [index, [studentId]] of studentIdRows.entries()) {
     if (Date.now() - startTime > MAX_RUNTIME_MS) {
@@ -1218,10 +1415,8 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className) {
     } catch (e) {
       errors.push(`Linha ${rowNumber} (matrícula ${studentId}): ${e.message}`);
     }
-    Utilities.sleep(200);
   }
 
-  const MAX_ERRORS_SHOWN = 15;
   const errorsToShow = errors.slice(0, MAX_ERRORS_SHOWN);
   const truncatedCount = errors.length - errorsToShow.length;
 
@@ -1290,110 +1485,6 @@ function executeStudentReportGeneration_(
 
   const htmlOutput = template.evaluate().setWidth(420).setHeight(360);
   ui.showModalDialog(htmlOutput, "Boletim gerado");
-}
-
-function withScriptLock(action, busyMessage) {
-  const ui = SpreadsheetApp.getUi();
-  const lock = LockService.getScriptLock();
-
-  if (!lock.tryLock(5000)) {
-    ui.alert(busyMessage);
-    return;
-  }
-
-  try {
-    action(ui);
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function createSchoolYear() {
-  withScriptLock(
-    createSchoolYearInternal_,
-    "Já existe uma operação em andamento. Tente novamente em alguns instantes.",
-  );
-}
-
-function createSchoolYearInternal_(ui) {
-  let config;
-  try {
-    config = loadConfig();
-  } catch (e) {
-    ui.alert(`Erro na configuração: ${e.message}`);
-    return;
-  }
-
-  const yearInput = promptForValue(
-    ui,
-    "Criar ano letivo",
-    "Digite o ano letivo (ex: 2026):",
-  );
-  if (yearInput === null) return;
-
-  if (!/^\d{4}$/.test(yearInput)) {
-    ui.alert(`"${yearInput}" não é um ano válido. Digite 4 dígitos, ex: 2026.`);
-    return;
-  }
-
-  const schoolYearLabel = `${SCHOOL_YEAR_LABEL_PREFIX}${yearInput}`;
-  if (schoolYearFolderExists(config, schoolYearLabel)) {
-    ui.alert(
-      `O ano letivo "${schoolYearLabel}" já existe. Nenhuma alteração foi feita.`,
-    );
-    return;
-  }
-
-  let classTemplateFile;
-  try {
-    classTemplateFile = getClassTemplateFile(config);
-  } catch (e) {
-    ui.alert(`Erro: ${e.message}`);
-    return;
-  }
-
-  const rootFolder = DriveApp.getFolderById(config.schoolYearsFolderId);
-  const yearFolder = rootFolder.createFolder(schoolYearLabel);
-  const createdClasses = [];
-  const errors = [];
-
-  for (const { className } of VALID_CLASSES) {
-    try {
-      const classFile = classTemplateFile.makeCopy(className, yearFolder);
-      const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
-      fillClassHeaderPlaceholders(classSpreadsheet, className, yearInput);
-      createdClasses.push(className);
-    } catch (e) {
-      errors.push(`${className}: ${e.message}`);
-    }
-  }
-
-  if (errors.length > 0) {
-    yearFolder.setTrashed(true);
-    ui.alert(
-      `Não foi possível criar o ano letivo "${schoolYearLabel}". Nenhuma alteração foi feita.\n\n` +
-        `Erros:\n${errors.join("\n")}`,
-    );
-    return;
-  }
-
-  ui.alert(
-    `Ano letivo "${schoolYearLabel}" criado com ${createdClasses.length} turma(s): ${createdClasses.join(", ")}.`,
-  );
-}
-
-function fillClassHeaderPlaceholders(classSpreadsheet, className, yearLabel) {
-  for (const sheet of classSpreadsheet.getSheets()) {
-    replaceSheetHeaderText(sheet, "{{school_class}}", className);
-    replaceSheetHeaderText(sheet, "{{school_year}}", yearLabel);
-  }
-}
-
-function replaceSheetHeaderText(sheet, placeholder, value) {
-  sheet
-    .createTextFinder(placeholder)
-    .matchEntireCell(false)
-    .replaceAllWith(value);
 }
 
 // ============================================================
@@ -1638,14 +1729,21 @@ function formatGuardianNames(names) {
 /**
  * Formata os números que representam as notas com até 2 casas decimais.
  *
+ * Importante: usa `.trim()` antes de testar e converter — uma célula com
+ * apenas espaço(s) em branco não pode "virar" nota 0,00, já que
+ * `Number(" ")` resulta em `0`. Sem essa checagem, uma nota não lançada
+ * (mas com espaço residual na célula) apareceria no boletim como zero,
+ * silenciosamente.
+ *
  * @param {any} value
  * @returns {string}
  */
 function formatGrade(value) {
-  if (value === "" || value === null || value === undefined) return "";
-  const number = Number(value);
+  const trimmedValue = String(value ?? "").trim();
+  if (trimmedValue === "") return "";
 
-  if (Number.isNaN(number)) return String(value);
+  const number = Number(trimmedValue);
+  if (Number.isNaN(number)) return trimmedValue;
 
   return new Intl.NumberFormat(DEFAULT_LOCALE, {
     minimumFractionDigits: 1,
