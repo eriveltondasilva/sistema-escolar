@@ -47,7 +47,7 @@
           <label
             class="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center mb-1"
           >
-            Matrícula do Aluno
+            Aluno (Digite o Nome ou Matrícula)
             <span
               x-show="isFetchingStudents"
               class="ml-2 inline-block w-3 h-3 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"
@@ -56,15 +56,18 @@
 
           <input
             type="text"
-            x-model="studentId"
+            x-model="studentSearch"
             list="studentsList"
             :disabled="isLoading || isFetchingStudents"
-            placeholder="Digite ou selecione a matrícula"
+            placeholder="Comece a digitar o nome do estudante..."
             class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 transition-all disabled:opacity-50"
           />
           <datalist id="studentsList">
-            <template x-for="id in availableStudentIds" :key="id">
-              <option :value="id"></option>
+            <template
+              x-for="student in availableStudents"
+              :key="student.studentId"
+            >
+              <option :value="student.studentId" x-text="student.name"></option>
             </template>
           </datalist>
         </div>
@@ -99,14 +102,11 @@
     <script>
       function reportForm() {
         return {
-          // Inicialização de dados
           actionType: "<?= actionType ?>",
           schoolYear: "<?= years[0] ?>",
           className: "<?= classes[0] ?>",
-          studentId: "",
-          availableStudentIds: [],
-
-          // Estados
+          studentSearch: "",
+          availableStudents: [],
           isLoading: false,
           isFetchingStudents: false,
           error: "",
@@ -114,7 +114,6 @@
           init() {
             if (this.actionType === "single") {
               this.fetchStudents();
-              // Observa mudanças nos selects para refazer a busca
               this.$watch("schoolYear", () => this.fetchStudents());
               this.$watch("className", () => this.fetchStudents());
             }
@@ -122,20 +121,20 @@
 
           fetchStudents() {
             this.isFetchingStudents = true;
-            this.availableStudentIds = [];
-            this.studentId = "";
+            this.availableStudents = [];
+            this.studentSearch = "";
             this.error = "";
 
             google.script.run
-              .withSuccessHandler((ids) => {
-                this.availableStudentIds = ids;
+              .withSuccessHandler((students) => {
+                this.availableStudents = students;
                 this.isFetchingStudents = false;
               })
               .withFailureHandler((err) => {
-                this.error = "Erro ao buscar matrículas: " + err.message;
+                this.error = "Erro ao buscar alunos: " + err.message;
                 this.isFetchingStudents = false;
               })
-              .getStudentIdsForClass(this.schoolYear, this.className);
+              .getStudentsDataForClass(this.schoolYear, this.className);
           },
 
           submit() {
@@ -143,8 +142,9 @@
             this.isLoading = true;
 
             if (this.actionType === "single") {
-              if (!this.studentId.trim()) {
-                this.error = "A matrícula do aluno não pode ser vazia.";
+              const selectedId = this.studentSearch.trim();
+              if (!selectedId) {
+                this.error = "Selecione ou digite uma matrícula válida.";
                 this.isLoading = false;
                 return;
               }
@@ -158,7 +158,7 @@
                 .executeStudentReportGeneration(
                   this.schoolYear,
                   this.className,
-                  this.studentId.trim(),
+                  selectedId,
                 );
             } else {
               google.script.run
