@@ -1275,9 +1275,11 @@ function getStudentsDataForClass(schoolYearLabel, className) {
   }));
 }
 
-function executeClassReportsGeneration(schoolYearLabel, className) {
+function executeClassReportsGeneration(schoolYearLabel, className, outputMode) {
+  const mode = outputMode === "merged" ? "merged" : "separate";
+
   withScriptLock((ui) => {
-    executeClassReportsGeneration_(ui, schoolYearLabel, className);
+    executeClassReportsGeneration_(ui, schoolYearLabel, className, mode);
   }, "Já existe uma geração de boletins em andamento. Tente novamente em alguns instantes.");
 }
 
@@ -1290,13 +1292,13 @@ function executeStudentReportGeneration(schoolYearLabel, className, studentId) {
   }, "Já existe uma geração de boletim em andamento. Tente novamente em alguns instantes.");
 }
 
-function executeClassReportsGeneration_(ui, schoolYearLabel, className) {
+function executeClassReportsGeneration_(ui, schoolYearLabel, className, outputMode) {
   const config = loadConfig();
   const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
   const classFile = getClassSpreadsheetFile(yearFolder, schoolYearLabel, className);
   const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
 
-  const { found, missing } = checkClassSubjects(classSpreadsheet);
+  const { found } = checkClassSubjects(classSpreadsheet);
   if (found.length === 0) {
     throw new Error("Nenhuma disciplina reconhecida nessa turma.");
   }
@@ -1317,9 +1319,17 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className) {
     foundSubjects,
   });
 
+  // Modo "merged": cria um Doc agregador vazio que receberá o conteúdo de
+  // cada boletim. Só existe durante a execução — é apagado após exportar o
+  // PDF final. No modo "separate" (padrão), fica null e o comportamento
+  // atual de cada aluno gerar seu próprio PDF é mantido sem alteração.
+  const mergedDocName = `${className}_${schoolYearLabel}_completo`;
+  const mergedDoc = outputMode === "merged" ? DocumentApp.create(mergedDocName) : null;
+
   let successCount = 0;
   const errors = [];
   const startTime = Date.now();
+  let isFirstStudent = true;
 
   for (const [index, [studentId]] of studentIdRows.entries()) {
     if (Date.now() - startTime > MAX_RUNTIME_MS) {
@@ -1338,10 +1348,26 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className) {
         className,
         foundSubjects,
         context,
+        mergedBody: mergedDoc?.getBody() ?? null,
+        isFirstInMerge: isFirstStudent,
       });
+      isFirstStudent = false;
       successCount++;
     } catch (e) {
       errors.push(`Linha ${rowNumber} (matrícula ${studentId}): ${e.message}`);
+    }
+  }
+
+  // Exporta o Doc agregador como um único PDF e limpa o Doc temporário.
+  let mergedPdfUrl = null;
+  if (mergedDoc) {
+    try {
+      mergedDoc.saveAndClose();
+      const pdfBlob = DriveApp.getFileById(mergedDoc.getId()).getAs("application/pdf");
+      const mergedFile = context.pdfFolder.createFile(pdfBlob).setName(`${mergedDocName}.pdf`);
+      mergedPdfUrl = mergedFile.getUrl();
+    } finally {
+      DriveApp.getFileById(mergedDoc.getId()).setTrashed(true);
     }
   }
 
@@ -1355,6 +1381,7 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className) {
   template.errors = errorsToShow;
   template.truncatedCount = truncatedCount;
   template.pdfFolderUrl = context.pdfFolder.getUrl();
+  template.mergedPdfUrl = mergedPdfUrl; // null no modo "separate"
 
   const htmlOutput = template.evaluate().setWidth(450).setHeight(460);
   ui.showModalDialog(htmlOutput, "Boletins gerados");
@@ -1490,13 +1517,8 @@ function buildSingleStudentReportContext({
  * @param {number} year
  */
 function insertQRCode(body, studentId, year) {
-  if (!WEB_APP_ID) {
-    body.replaceText("{{qr_code}}", "");
-    return;
-  }
-
   const validationUrl = `https://script.google.com/macros/s/${WEB_APP_ID}/exec?studentId=${studentId}&year=${year}`;
-  const qrApiUrl = `https://quickchart.io/qr?text=${encodeURIComponent(validationUrl)}&size=100`;
+  const qrApiUrl = `https://quickchart.io/qr?text=${encodeURIComponent(validationUrl)}&size=80`;
 
   const imageBlob = UrlFetchApp.fetch(qrApiUrl).getBlob();
   const element = body.findText("{{qr_code}}");
@@ -1516,7 +1538,14 @@ function insertQRCode(body, studentId, year) {
  * @param {ReportContext} params.context
  * @returns {string} O URL do arquivo PDF gerado
  */
-function generateReportForStudent({ studentId, className, foundSubjects, context }) {
+function generateReportForStudent({
+  studentId,
+  className,
+  foundSubjects,
+  context,
+  mergedBody = null,
+  isFirstInMerge = false,
+}) {
   const personalData = getPersonalData(studentId, context);
   const gradesData = getGradesForStudent(studentId, foundSubjects, context);
 
@@ -1557,6 +1586,15 @@ function generateReportForStudent({ studentId, className, foundSubjects, context
 
     doc.saveAndClose();
 
+    // Modo "merged": copia o conteúdo preenchido para o Doc agregador e
+    // descarta a cópia individual. O `finally` abaixo cuida do setTrashed.
+    if (mergedBody) {
+      if (!isFirstInMerge) mergedBody.appendPageBreak();
+      appendBodyContent(mergedBody, body);
+      return null;
+    }
+
+    // Modo "separate" (padrão): comportamento atual, sem alteração.
     const pdfBlob = docCopy.getAs("application/pdf");
     const pdfFile = context.pdfFolder.createFile(pdfBlob).setName(`${fileName}.pdf`);
 
@@ -1578,6 +1616,43 @@ function trashPreviousPdfVersions(pdfFolder, fileName, keepFileId) {
     const file = existingFiles.next();
     if (file.getId() !== keepFileId) {
       file.setTrashed(true);
+    }
+  }
+}
+
+/**
+ * Copia todos os elementos do Body de origem para o Body de destino.
+ * Usado no modo "merged" para agregar o conteúdo de cada boletim gerado
+ * num Doc único antes de exportar o PDF final da turma.
+ *
+ * O `.copy()` em cada elemento é obrigatório: sem ele, o Apps Script tenta
+ * mover o elemento original (que ainda pertence ao Doc de origem) e lança
+ * um erro de "element already exists in parent".
+ *
+ * Tipos suportados cobrem todos os elementos que um boletim pode ter:
+ * parágrafos (inclusive os que contêm InlineImages como o QR code),
+ * tabelas, e itens de lista. Outros tipos (HorizontalRule, etc.) são
+ * ignorados silenciosamente — não ocorrem num boletim padrão.
+ *
+ * @param {GoogleAppsScript.Document.Body} targetBody
+ * @param {GoogleAppsScript.Document.Body} sourceBody
+ */
+function appendBodyContent(targetBody, sourceBody) {
+  const totalChildren = sourceBody.getNumChildren();
+
+  for (let i = 0; i < totalChildren; i++) {
+    const element = sourceBody.getChild(i);
+
+    switch (element.getType()) {
+      case DocumentApp.ElementType.PARAGRAPH:
+        targetBody.appendParagraph(element.asParagraph().copy());
+        break;
+      case DocumentApp.ElementType.TABLE:
+        targetBody.appendTable(element.asTable().copy());
+        break;
+      case DocumentApp.ElementType.LIST_ITEM:
+        targetBody.appendListItem(element.asListItem().copy());
+        break;
     }
   }
 }
