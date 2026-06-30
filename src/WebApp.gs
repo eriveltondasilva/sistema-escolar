@@ -1,7 +1,4 @@
 /**
- * Handles incoming HTTP GET requests to the Web App.
- * Expected URL format: https://script.google.com/macros/s/WEB_APP_ID/exec?studentId=123&year=2026
- *
  * @param {GoogleAppsScript.Events.DoGet} params
  * @returns {GoogleAppsScript.HTML.HtmlOutput}
  */
@@ -15,7 +12,7 @@ function doGet({ parameter }) {
   }
 
   try {
-    const fileId = findReportPdfId(studentId);
+    const fileId = findReportPdfId(studentId, year);
 
     if (!fileId) {
       return renderError(
@@ -50,14 +47,25 @@ function renderError(message) {
 }
 
 /**
- * Searches Google Drive for the student's PDF report card.
- *
  * @param {string} studentId
- * @returns {string|null} The Google Drive File ID or null if not found.
+ * @param {string} year
+ * @returns {string|null}
  */
-function findReportPdfId(studentId) {
+function findReportPdfId(studentId, year) {
+  let config;
+  try {
+    config = loadConfig();
+  } catch (e) {
+    throw new Error(`Erro ao carregar configuração: ${e.message}`);
+  }
+
+  const pdfFolder = DriveApp.getFolderById(config.pdfsFolderId);
+  const yearFolder = pdfFolder.getFoldersByName(year);
+
+  if (!yearFolder.hasNext()) return null;
+
   const searchQuery = `title contains '${studentId}_' and mimeType = 'application/pdf' and trashed = false`;
-  const files = DriveApp.searchFiles(searchQuery);
+  const files = yearFolder.next().searchFiles(searchQuery);
 
   return files.hasNext() ? files.next().getId() : null;
 }
