@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="pt-BR">
   <head>
+    <base target="_top" />
     <meta charset="UTF-8" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script
@@ -9,7 +10,7 @@
     ></script>
   </head>
 
-  <body class="bg-slate-50 text-slate-900 antialiased h-full">
+  <body class="bg-slate-50 text-slate-900 font-sans antialiased h-full">
     <script>
       const serverIssues = <?!= JSON.stringify(issues) ?>;
     </script>
@@ -55,21 +56,21 @@
               <button
                 @click="filter = 'all'"
                 :class="filter === 'all' ? 'bg-white shadow text-slate-900' : 'text-slate-600 hover:text-slate-900'"
-                class="flex-1 text-xs font-medium py-1.5 rounded-md transition-all"
+                class="flex-1 text-xs font-medium py-1.5 rounded-md transition-all focus:outline-none focus:ring-2 focus:ring-inset focus:ring-slate-400"
               >
                 Todos (<span x-text="issues.length"></span>)
               </button>
               <button
                 @click="filter = 'error'"
                 :class="filter === 'error' ? 'bg-white shadow text-red-700' : 'text-slate-600 hover:text-slate-900'"
-                class="flex-1 text-xs font-medium py-1.5 rounded-md transition-all"
+                class="flex-1 text-xs font-medium py-1.5 rounded-md transition-all focus:outline-none focus:ring-2 focus:ring-inset focus:ring-slate-400"
               >
                 Erros (<span x-text="errorCount"></span>)
               </button>
               <button
                 @click="filter = 'warning'"
                 :class="filter === 'warning' ? 'bg-white shadow text-amber-700' : 'text-slate-600 hover:text-slate-900'"
-                class="flex-1 text-xs font-medium py-1.5 rounded-md transition-all"
+                class="flex-1 text-xs font-medium py-1.5 rounded-md transition-all focus:outline-none focus:ring-2 focus:ring-inset focus:ring-slate-400"
               >
                 Avisos (<span x-text="warningCount"></span>)
               </button>
@@ -126,7 +127,7 @@
                       :href="issue.url"
                       target="_blank"
                       :class="issue.type === 'error' ? 'text-red-700 hover:text-red-800' : 'text-amber-700 hover:text-amber-800'"
-                      class="inline-flex items-center text-xs font-semibold mt-2 group"
+                      class="inline-flex items-center text-xs font-semibold mt-2 group focus:outline-none focus:underline"
                     >
                       Corrigir arquivo
                       <svg
@@ -154,7 +155,7 @@
       <div class="p-4 border-t border-slate-200 bg-white shrink-0">
         <button
           onclick="google.script.host.close()"
-          class="w-full inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-slate-300 bg-white hover:bg-slate-50 px-4 py-2 text-slate-700 focus:outline-none"
+          class="w-full px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 transition-colors"
         >
           Fechar Janela
         </button>

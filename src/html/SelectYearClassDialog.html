@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="pt-BR">
   <head>
+    <base target="_top" />
     <meta charset="UTF-8" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script
@@ -8,7 +9,8 @@
       src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
     ></script>
   </head>
-  <body class="bg-white text-slate-900 antialiased p-5">
+
+  <body class="bg-white text-slate-900 font-sans antialiased p-5">
     <div x-data="reportForm()" class="space-y-4">
       <div>
         <label
@@ -85,14 +87,14 @@
         <button
           @click="google.script.host.close()"
           :disabled="isLoading"
-          class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-slate-200 bg-white hover:bg-slate-50 px-4 py-2 text-slate-700 focus:outline-none disabled:opacity-50"
+          class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-slate-200 bg-white hover:bg-slate-50 px-4 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 disabled:opacity-50"
         >
           Cancelar
         </button>
         <button
           @click="submit()"
           :disabled="isLoading || (actionType === 'single' && isFetchingStudents)"
-          class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 focus:outline-none disabled:opacity-70 disabled:cursor-not-allowed"
+          class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 disabled:opacity-70 disabled:cursor-not-allowed"
         >
           <span x-text="isLoading ? 'Processando...' : 'Confirmar'"></span>
         </button>
