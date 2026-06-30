@@ -6,8 +6,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
 
-  <body class="bg-slate-50 font-sans text-slate-800 antialiased">
-    <main class="flex h-full flex-col justify-between p-5">
+  <body>
+    <main
+      class="flex h-full flex-col justify-between bg-slate-50 p-5 font-sans text-slate-800 antialiased"
+    >
       <div class="space-y-4">
         <header
           class="flex items-start space-x-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-600"
@@ -74,11 +76,20 @@
         </div>
         <? } ?>
 
-        <div class="pt-2">
+        <div class="flex flex-col space-y-2 pt-2">
+          <? if (mergedPdfUrl) { ?>
+          <a
+            href="<?= mergedPdfUrl ?>"
+            target="_blank"
+            class="inline-flex w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
+          >
+            Abrir PDF único da turma
+          </a>
+          <? } ?>
           <a
             href="<?= pdfFolderUrl ?>"
             target="_blank"
-            class="inline-flex w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
+            class="inline-flex w-full items-center justify-center rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
           >
             Abrir pasta no Drive
           </a>
