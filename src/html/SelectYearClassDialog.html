@@ -4,17 +4,13 @@
     <base target="_top" />
     <meta charset="UTF-8" />
     <script src="https://cdn.tailwindcss.com"></script>
-    <script
-      defer
-      src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
-    ></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   </head>
 
   <body class="bg-white p-5 font-sans text-slate-900 antialiased">
     <div x-data="reportForm()" class="space-y-4">
       <div>
-        <label
-          class="mb-1 block text-xs font-medium tracking-wider text-slate-500 uppercase"
+        <label class="mb-1 block text-xs font-medium tracking-wider text-slate-500 uppercase"
           >Ano Letivo</label
         >
         <select
@@ -29,8 +25,7 @@
       </div>
 
       <div>
-        <label
-          class="mb-1 block text-xs font-medium tracking-wider text-slate-500 uppercase"
+        <label class="mb-1 block text-xs font-medium tracking-wider text-slate-500 uppercase"
           >Turma</label
         >
         <select
@@ -65,10 +60,7 @@
             class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm transition-all focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none disabled:opacity-50"
           />
           <datalist id="studentsList">
-            <template
-              x-for="student in availableStudents"
-              :key="student.studentId"
-            >
+            <template x-for="student in availableStudents" :key="student.studentId">
               <option :value="student.studentId" x-text="student.name"></option>
             </template>
           </datalist>
@@ -157,11 +149,7 @@
                   this.error = err.message;
                   this.isLoading = false;
                 })
-                .executeStudentReportGeneration(
-                  this.schoolYear,
-                  this.className,
-                  selectedId,
-                );
+                .executeStudentReportGeneration(this.schoolYear, this.className, selectedId);
             } else {
               google.script.run
                 .withSuccessHandler(() => google.script.host.close())

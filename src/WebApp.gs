@@ -6,9 +6,7 @@ function doGet({ parameter }) {
   const { studentId, year } = parameter;
 
   if (!studentId || !year) {
-    return renderError(
-      "Matrícula e Ano são obrigatórios para realizar a consulta.",
-    );
+    return renderError("Matrícula e Ano são obrigatórios para realizar a consulta.");
   }
 
   try {

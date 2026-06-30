@@ -4,10 +4,7 @@
     <base target="_top" />
     <meta charset="UTF-8" />
     <script src="https://cdn.tailwindcss.com"></script>
-    <script
-      defer
-      src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
-    ></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   </head>
 
   <body class="h-full bg-slate-50 font-sans text-slate-900 antialiased">
@@ -17,18 +14,11 @@
 
     <div x-data="diagnosticPanel()" class="flex h-[500px] flex-col">
       <template x-if="issues.length === 0">
-        <div
-          class="flex flex-1 flex-col items-center justify-center space-y-4 p-6 text-center"
-        >
+        <div class="flex flex-1 flex-col items-center justify-center space-y-4 p-6 text-center">
           <div
             class="mb-2 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"
           >
-            <svg
-              class="h-8 w-8"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -39,8 +29,8 @@
           </div>
           <h2 class="text-xl font-bold text-slate-800">Tudo Certo!</h2>
           <p class="max-w-xs text-sm text-slate-500">
-            A estrutura de pastas, planilhas, disciplinas e o cadastro de alunos
-            foram validados sem nenhum problema.
+            A estrutura de pastas, planilhas, disciplinas e o cadastro de alunos foram validados sem
+            nenhum problema.
           </p>
         </div>
       </template>
@@ -48,9 +38,7 @@
       <template x-if="issues.length > 0">
         <div class="flex h-full flex-col">
           <div class="shrink-0 border-b border-slate-200 bg-white p-4">
-            <h2 class="mb-3 text-lg font-semibold tracking-tight">
-              Resultados da Verificação
-            </h2>
+            <h2 class="mb-3 text-lg font-semibold tracking-tight">Resultados da Verificação</h2>
 
             <div class="flex space-x-2 rounded-lg bg-slate-100 p-1">
               <button

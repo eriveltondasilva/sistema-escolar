@@ -264,31 +264,20 @@ function loadConfig() {
   }
 
   const configKeysCount = Object.keys(CONFIG_KEY_MAP).length;
-  const rows = sheet
-    .getRange(CONFIG_START_ROW, 1, configKeysCount, 2)
-    .getValues();
+  const rows = sheet.getRange(CONFIG_START_ROW, 1, configKeysCount, 2).getValues();
 
   const rawConfig = Object.fromEntries(
-    rows
-      .map(([key, value]) => [String(key ?? "").trim(), value])
-      .filter(([key]) => key.length > 0),
+    rows.map(([key, value]) => [String(key ?? "").trim(), value]).filter(([key]) => key.length > 0),
   );
 
-  const missingKeys = Object.keys(CONFIG_KEY_MAP).filter(
-    (key) => !rawConfig[key],
-  );
+  const missingKeys = Object.keys(CONFIG_KEY_MAP).filter((key) => !rawConfig[key]);
 
   if (missingKeys.length > 0) {
-    throw new Error(
-      `Configuração incompleta: faltam os valores de ${missingKeys.join(", ")}.`,
-    );
+    throw new Error(`Configuração incompleta: faltam os valores de ${missingKeys.join(", ")}.`);
   }
 
   return Object.fromEntries(
-    Object.entries(CONFIG_KEY_MAP).map(([sheetKey, codeKey]) => [
-      codeKey,
-      rawConfig[sheetKey],
-    ]),
+    Object.entries(CONFIG_KEY_MAP).map(([sheetKey, codeKey]) => [codeKey, rawConfig[sheetKey]]),
   );
 }
 
@@ -396,9 +385,7 @@ function getReportTemplateFile(config) {
   try {
     file = DriveApp.getFileById(config.reportTemplateFileId);
   } catch {
-    throw new Error(
-      `Modelo de boletim não encontrado (ID: ${config.reportTemplateFileId}).`,
-    );
+    throw new Error(`Modelo de boletim não encontrado (ID: ${config.reportTemplateFileId}).`);
   }
 
   if (file.getMimeType() !== MimeType.GOOGLE_DOCS) {
@@ -459,9 +446,7 @@ function getOrCreateClassPdfFolder(config, yearNumber, className) {
     : rootFolder.createFolder(yearLabel);
 
   const classFolders = yearFolder.getFoldersByName(className);
-  return classFolders.hasNext()
-    ? classFolders.next()
-    : yearFolder.createFolder(className);
+  return classFolders.hasNext() ? classFolders.next() : yearFolder.createFolder(className);
 }
 
 // ============================================================
@@ -481,8 +466,7 @@ function getOrCreateClassPdfFolder(config, yearNumber, className) {
  */
 function findSubjectSheet(classSpreadsheet, subject) {
   return (
-    classSpreadsheet.getSheetByName(subject.code) ??
-    classSpreadsheet.getSheetByName(subject.name)
+    classSpreadsheet.getSheetByName(subject.code) ?? classSpreadsheet.getSheetByName(subject.name)
   );
 }
 
@@ -517,12 +501,7 @@ function getClassStudentsFromResumo(classSpreadsheet) {
   const lastRow = resumoSheet.getLastRow();
   if (lastRow < SUMMARY_FIRST_DATA_ROW) return [];
   const values = resumoSheet
-    .getRange(
-      SUMMARY_FIRST_DATA_ROW,
-      1,
-      lastRow - SUMMARY_FIRST_DATA_ROW + 1,
-      2,
-    )
+    .getRange(SUMMARY_FIRST_DATA_ROW, 1, lastRow - SUMMARY_FIRST_DATA_ROW + 1, 2)
     .getValues();
 
   return values
@@ -557,9 +536,7 @@ function isStudentInClass(classSpreadsheet, studentId) {
 function loadStudentsMap(registrationSheet) {
   const studentsSheet = registrationSheet.getSheetByName(SHEET_NAMES.STUDENTS);
   if (!studentsSheet) {
-    throw new Error(
-      `Cadastro de Alunos: a aba "${SHEET_NAMES.STUDENTS}" não existe.`,
-    );
+    throw new Error(`Cadastro de Alunos: a aba "${SHEET_NAMES.STUDENTS}" não existe.`);
   }
 
   const rows = studentsSheet.getDataRange().getValues().slice(1);
@@ -623,9 +600,7 @@ function findDuplicateStudentIds(registrationSheet) {
  * @returns {Map<string, string[]>}
  */
 function loadGuardiansMap(registrationSheet) {
-  const guardiansSheet = registrationSheet.getSheetByName(
-    SHEET_NAMES.GUARDIANS,
-  );
+  const guardiansSheet = registrationSheet.getSheetByName(SHEET_NAMES.GUARDIANS);
 
   if (!guardiansSheet) return new Map();
 
@@ -687,9 +662,7 @@ function loadSingleStudentMap(registrationSheet, studentId) {
   const studentsSheet = registrationSheet.getSheetByName(SHEET_NAMES.STUDENTS);
 
   if (!studentsSheet) {
-    throw new Error(
-      `Cadastro de Alunos: a aba "${SHEET_NAMES.STUDENTS}" não existe.`,
-    );
+    throw new Error(`Cadastro de Alunos: a aba "${SHEET_NAMES.STUDENTS}" não existe.`);
   }
 
   const map = new Map();
@@ -728,9 +701,7 @@ function loadSingleStudentMap(registrationSheet, studentId) {
  * @returns {Map<string, string[]>}
  */
 function loadSingleStudentGuardiansMap(registrationSheet, studentId) {
-  const guardiansSheet = registrationSheet.getSheetByName(
-    SHEET_NAMES.GUARDIANS,
-  );
+  const guardiansSheet = registrationSheet.getSheetByName(SHEET_NAMES.GUARDIANS);
   const map = new Map();
   if (!guardiansSheet) return map;
 
@@ -753,12 +724,7 @@ function loadSingleStudentGuardiansMap(registrationSheet, studentId) {
   const lastMatchedRow = Math.max(...matchedRows);
 
   const nameColumnValues = guardiansSheet
-    .getRange(
-      firstRow,
-      GUARDIAN_COLUMNS.name + 1,
-      lastMatchedRow - firstRow + 1,
-      1,
-    )
+    .getRange(firstRow, GUARDIAN_COLUMNS.name + 1, lastMatchedRow - firstRow + 1, 1)
     .getValues();
 
   const names = matchedRows
@@ -785,12 +751,7 @@ function loadGradesBySubject(classSpreadsheet, foundSubjects) {
     const rows =
       lastRow >= FIRST_DATA_ROW
         ? sheet
-            .getRange(
-              FIRST_DATA_ROW,
-              1,
-              lastRow - FIRST_DATA_ROW + 1,
-              GRADE_COLUMNS_COUNT,
-            )
+            .getRange(FIRST_DATA_ROW, 1, lastRow - FIRST_DATA_ROW + 1, GRADE_COLUMNS_COUNT)
             .getValues()
         : [];
 
@@ -812,11 +773,7 @@ function loadGradesBySubject(classSpreadsheet, foundSubjects) {
  * @param {string} studentId
  * @returns {Map<string, Map<string, any[]>>}
  */
-function loadGradesForSingleStudent(
-  classSpreadsheet,
-  foundSubjects,
-  studentId,
-) {
+function loadGradesForSingleStudent(classSpreadsheet, foundSubjects, studentId) {
   const map = new Map();
 
   for (const subject of foundSubjects) {
@@ -832,9 +789,7 @@ function loadGradesForSingleStudent(
         .findNext();
 
       if (match) {
-        const rowValues = sheet
-          .getRange(match.getRow(), 1, 1, GRADE_COLUMNS_COUNT)
-          .getValues()[0];
+        const rowValues = sheet.getRange(match.getRow(), 1, 1, GRADE_COLUMNS_COUNT).getValues()[0];
         byStudentId.set(studentId, rowValues);
       }
     }
@@ -859,10 +814,7 @@ function getGradesForStudent(studentId, foundSubjects, context) {
 
     result[subject.name] = rowValues
       ? Object.fromEntries(
-          Object.entries(GRADE_COLUMNS).map(([field, index]) => [
-            field,
-            rowValues[index],
-          ]),
+          Object.entries(GRADE_COLUMNS).map(([field, index]) => [field, rowValues[index]]),
         )
       : null;
   }
@@ -879,9 +831,7 @@ function getPersonalData(studentId, context) {
   const student = context.studentsMap.get(studentId);
 
   if (!student) {
-    throw new Error(
-      `Aluno com matrícula ${studentId} não encontrado no Cadastro de Alunos.`,
-    );
+    throw new Error(`Aluno com matrícula ${studentId} não encontrado no Cadastro de Alunos.`);
   }
 
   const guardianNames = context.guardiansMap.get(studentId) ?? [];
@@ -907,12 +857,7 @@ function getPersonalData(studentId, context) {
  * @param {string} className
  * @returns {Issue[]}
  */
-function validateClassStudents(
-  classSpreadsheet,
-  registeredStudentsMap,
-  year,
-  className,
-) {
+function validateClassStudents(classSpreadsheet, registeredStudentsMap, year, className) {
   const issues = [];
   const students = getClassStudentsFromResumo(classSpreadsheet);
   const ssUrl = classSpreadsheet.getUrl();
@@ -927,9 +872,7 @@ function validateClassStudents(
   }
 
   const dupes = findDuplicateResumoIds(students, year, className);
-  issues.push(
-    ...dupes.map((msg) => ({ type: "error", text: msg, url: ssUrl })),
-  );
+  issues.push(...dupes.map((msg) => ({ type: "error", text: msg, url: ssUrl })));
 
   for (const { studentId, name, row } of students) {
     const registeredStudent = registeredStudentsMap.get(studentId);
@@ -1006,9 +949,7 @@ function checkConfiguration() {
 
   let registeredStudentsMap;
   try {
-    const registrationSheet = SpreadsheetApp.openById(
-      config.studentsSpreadsheetId,
-    );
+    const registrationSheet = SpreadsheetApp.openById(config.studentsSpreadsheetId);
     const regUrl = registrationSheet.getUrl();
 
     if (!registrationSheet.getSheetByName(SHEET_NAMES.STUDENTS)) {
@@ -1029,9 +970,7 @@ function checkConfiguration() {
     registeredStudentsMap = loadStudentsMap(registrationSheet);
 
     const dupes = findDuplicateStudentIds(registrationSheet);
-    issues.push(
-      ...dupes.map((msg) => ({ type: "error", text: msg, url: regUrl })),
-    );
+    issues.push(...dupes.map((msg) => ({ type: "error", text: msg, url: regUrl })));
   } catch (e) {
     issues.push({ type: "error", text: `Cadastro de Alunos: ${e.message}` });
   }
@@ -1105,12 +1044,7 @@ function checkConfiguration() {
 
       if (registeredStudentsMap) {
         issues.push(
-          ...validateClassStudents(
-            classSpreadsheet,
-            registeredStudentsMap,
-            year,
-            className,
-          ),
+          ...validateClassStudents(classSpreadsheet, registeredStudentsMap, year, className),
         );
       }
     }
@@ -1197,9 +1131,7 @@ function openSelectYearClassDialog(actionType) {
       return;
     }
 
-    const template = HtmlService.createTemplateFromFile(
-      "SelectYearClassDialog",
-    );
+    const template = HtmlService.createTemplateFromFile("SelectYearClassDialog");
     template.years = years;
     template.classes = VALID_CLASSES.map((c) => c.className);
     template.actionType = actionType;
@@ -1210,9 +1142,7 @@ function openSelectYearClassDialog(actionType) {
 
     ui.showModalDialog(
       htmlOutput,
-      actionType === "single"
-        ? "Gerar Boletim do Aluno"
-        : "Gerar Boletins da Turma",
+      actionType === "single" ? "Gerar Boletim do Aluno" : "Gerar Boletins da Turma",
     );
   } catch (e) {
     ui.alert(`Erro ao abrir seleção: ${e.message}`);
@@ -1250,11 +1180,7 @@ function createSchoolYearInternal_(ui) {
     return { success: false, message: `Erro na configuração: ${e.message}` };
   }
 
-  const yearInput = promptForValue(
-    ui,
-    "Criar ano letivo",
-    "Digite o ano letivo (ex: 2026):",
-  );
+  const yearInput = promptForValue(ui, "Criar ano letivo", "Digite o ano letivo (ex: 2026):");
   if (yearInput === null) {
     return { success: false, message: "Operação cancelada pelo usuário." };
   }
@@ -1321,10 +1247,7 @@ function fillClassHeaderPlaceholders(classSpreadsheet, className, yearLabel) {
 }
 
 function replaceSheetHeaderText(sheet, placeholder, value) {
-  sheet
-    .createTextFinder(placeholder)
-    .matchEntireCell(false)
-    .replaceAllWith(value);
+  sheet.createTextFinder(placeholder).matchEntireCell(false).replaceAllWith(value);
 }
 
 // ------------------------------------------------------------
@@ -1339,11 +1262,7 @@ function replaceSheetHeaderText(sheet, placeholder, value) {
 function getStudentsDataForClass(schoolYearLabel, className) {
   const config = loadConfig();
   const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
-  const classFile = getClassSpreadsheetFile(
-    yearFolder,
-    schoolYearLabel,
-    className,
-  );
+  const classFile = getClassSpreadsheetFile(yearFolder, schoolYearLabel, className);
   const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
 
   const students = getClassStudentsFromResumo(classSpreadsheet);
@@ -1372,11 +1291,7 @@ function executeStudentReportGeneration(schoolYearLabel, className, studentId) {
 function executeClassReportsGeneration_(ui, schoolYearLabel, className) {
   const config = loadConfig();
   const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
-  const classFile = getClassSpreadsheetFile(
-    yearFolder,
-    schoolYearLabel,
-    className,
-  );
+  const classFile = getClassSpreadsheetFile(yearFolder, schoolYearLabel, className);
   const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
 
   const { found, missing } = checkClassSubjects(classSpreadsheet);
@@ -1389,9 +1304,7 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className) {
   const lastRow = firstSheet.getLastRow();
   const studentIdRows =
     lastRow >= FIRST_DATA_ROW
-      ? firstSheet
-          .getRange(FIRST_DATA_ROW, 1, lastRow - FIRST_DATA_ROW + 1, 1)
-          .getValues()
+      ? firstSheet.getRange(FIRST_DATA_ROW, 1, lastRow - FIRST_DATA_ROW + 1, 1).getValues()
       : [];
 
   const context = buildReportContext({
@@ -1433,9 +1346,7 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className) {
   const errorsToShow = errors.slice(0, MAX_ERRORS_SHOWN);
   const truncatedCount = errors.length - errorsToShow.length;
 
-  const template = HtmlService.createTemplateFromFile(
-    "ClassReportResultDialog",
-  );
+  const template = HtmlService.createTemplateFromFile("ClassReportResultDialog");
   template.successCount = successCount;
   template.className = className;
   template.schoolYearLabel = schoolYearLabel;
@@ -1447,19 +1358,10 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className) {
   ui.showModalDialog(htmlOutput, "Boletins gerados");
 }
 
-function executeStudentReportGeneration_(
-  ui,
-  schoolYearLabel,
-  className,
-  studentId,
-) {
+function executeStudentReportGeneration_(ui, schoolYearLabel, className, studentId) {
   const config = loadConfig();
   const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
-  const classFile = getClassSpreadsheetFile(
-    yearFolder,
-    schoolYearLabel,
-    className,
-  );
+  const classFile = getClassSpreadsheetFile(yearFolder, schoolYearLabel, className);
   const classSpreadsheet = SpreadsheetApp.openById(classFile.getId());
 
   const { found: foundSubjects } = checkClassSubjects(classSpreadsheet);
@@ -1526,9 +1428,7 @@ function buildReportContext({
   foundSubjects,
 }) {
   const yearNumber = extractYearNumber(schoolYearLabel);
-  const registrationSheet = SpreadsheetApp.openById(
-    config.studentsSpreadsheetId,
-  );
+  const registrationSheet = SpreadsheetApp.openById(config.studentsSpreadsheetId);
 
   return {
     yearNumber,
@@ -1566,9 +1466,7 @@ function buildSingleStudentReportContext({
   studentId,
 }) {
   const yearNumber = extractYearNumber(schoolYearLabel);
-  const registrationSheet = SpreadsheetApp.openById(
-    config.studentsSpreadsheetId,
-  );
+  const registrationSheet = SpreadsheetApp.openById(config.studentsSpreadsheetId);
 
   return {
     yearNumber,
@@ -1577,11 +1475,7 @@ function buildSingleStudentReportContext({
     pdfFolder: getOrCreateClassPdfFolder(config, yearNumber, className),
     studentsMap: loadSingleStudentMap(registrationSheet, studentId),
     guardiansMap: loadSingleStudentGuardiansMap(registrationSheet, studentId),
-    gradesBySubject: loadGradesForSingleStudent(
-      classSpreadsheet,
-      foundSubjects,
-      studentId,
-    ),
+    gradesBySubject: loadGradesForSingleStudent(classSpreadsheet, foundSubjects, studentId),
   };
 }
 
@@ -1620,12 +1514,7 @@ function insertQRCode(body, studentId, year) {
  * @param {ReportContext} params.context
  * @returns {string} O URL do arquivo PDF gerado
  */
-function generateReportForStudent({
-  studentId,
-  className,
-  foundSubjects,
-  context,
-}) {
+function generateReportForStudent({ studentId, className, foundSubjects, context }) {
   const personalData = getPersonalData(studentId, context);
   const gradesData = getGradesForStudent(studentId, foundSubjects, context);
 
@@ -1667,9 +1556,7 @@ function generateReportForStudent({
     doc.saveAndClose();
 
     const pdfBlob = docCopy.getAs("application/pdf");
-    const pdfFile = context.pdfFolder
-      .createFile(pdfBlob)
-      .setName(`${fileName}.pdf`);
+    const pdfFile = context.pdfFolder.createFile(pdfBlob).setName(`${fileName}.pdf`);
 
     trashPreviousPdfVersions(context.pdfFolder, fileName, pdfFile.getId());
     return pdfFile.getUrl();
@@ -1700,11 +1587,7 @@ function trashPreviousPdfVersions(pdfFolder, fileName, keepFileId) {
  */
 function fillSubjectPlaceholders(body, subjectCode, grades) {
   for (const { suffix, field, format } of SUBJECT_PLACEHOLDER_FIELDS) {
-    replacePlaceholder(
-      body,
-      `${subjectCode}_${suffix}`.toLowerCase(),
-      format(grades[field]),
-    );
+    replacePlaceholder(body, `${subjectCode}_${suffix}`.toLowerCase(), format(grades[field]));
   }
 }
 
