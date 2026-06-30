@@ -144,13 +144,15 @@ const SCHOOL_YEAR_LABEL_PREFIX = "Ano Letivo - ";
 const CONFIG_START_ROW = 4;
 const SUMMARY_FIRST_DATA_ROW = 4;
 const FIRST_DATA_ROW = 5;
-
 const GRADE_COLUMNS_COUNT = 17;
-const MAX_RUNTIME_MS = 5 * 60 * 1000;
-const MAX_ERRORS_SHOWN = 15;
-const SCRIPT_LOCK_TIMEOUT_MS = 5000;
 
-const WEB_APP_ID = "";
+const MAX_ERRORS_SHOWN = 15;
+
+const MAX_RUNTIME_MS = 5 * 60 * 1000; // 5 minutos
+const SCRIPT_LOCK_TIMEOUT_MS = 5 * 1000; // 5 segundos
+
+const WEB_APP_ID = "AKfycbxYHe8KgqFlwzFuBOmPQydl3Lw4EgzOD1SiLboBP2OsN6qHnCVKISQ_EtEZupZJh-D-pQ";
+
 /**
  * Turmas únicas, não insira duas vezes o mesmo className.
  * @type {ValidClass[]}
@@ -1494,7 +1496,7 @@ function insertQRCode(body, studentId, year) {
   }
 
   const validationUrl = `https://script.google.com/macros/s/${WEB_APP_ID}/exec?studentId=${studentId}&year=${year}`;
-  const qrApiUrl = `https://quickchart.io/qr?text=${encodeURIComponent(validationUrl)}&size=80`;
+  const qrApiUrl = `https://quickchart.io/qr?text=${encodeURIComponent(validationUrl)}&size=100`;
 
   const imageBlob = UrlFetchApp.fetch(qrApiUrl).getBlob();
   const element = body.findText("{{qr_code}}");
