@@ -1,12 +1,19 @@
 {
   "scripts": {
-    "fmt": "bunx prettier . -w",
-    "lint": "bunx eslint ."
+    "fmt": "bunx prettier .",
+    "fmt:fix": "bunx prettier . --write",
+    "lint": "bunx eslint .",
+    "lint:fix": "bunx eslint . --fix",
+    "1xxx": "",
+    "check": "bun run fmt && bun run lint",
+    "fix": "bun run fmt:fix && bun run lint:fix"
   },
   "dependencies": {},
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.6.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jsdoc": "^63.0.10",
     "globals": "^17.7.0",
     "prettier": "^3.9.4",
     "prettier-plugin-tailwindcss": "^0.8.0"
