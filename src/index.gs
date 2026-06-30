@@ -1594,6 +1594,11 @@ function buildSingleStudentReportContext({
  * @param {number} year
  */
 function insertQRCode(body, studentId, year) {
+  if (!WEB_APP_ID) {
+    body.replaceText("{{qr_code}}", "");
+    return;
+  }
+
   const validationUrl = `https://script.google.com/macros/s/${WEB_APP_ID}/exec?studentId=${studentId}&year=${year}`;
   const qrApiUrl = `https://quickchart.io/qr?text=${encodeURIComponent(validationUrl)}&size=80`;
 
