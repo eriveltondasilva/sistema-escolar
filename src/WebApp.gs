@@ -26,7 +26,7 @@ function doGet({ parameter }) {
       .setTitle("Boletim Escolar")
       .addMetaTag("viewport", "width=device-width, initial-scale=1.0");
   } catch (error) {
-    return renderError("Erro inesperado: " + error.message);
+    return renderError(`Erro inesperado: ${error.message}`);
   }
 }
 

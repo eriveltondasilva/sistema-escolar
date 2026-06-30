@@ -294,7 +294,6 @@ function onOpen() {
     .addItem("Gerar boletins da turma", "generateClassReports")
     .addSeparator()
     .addItem("Criar ano letivo", "createSchoolYear")
-    .addSeparator()
     .addItem("Verificar configuração", "checkConfiguration")
     .addToUi();
 }
