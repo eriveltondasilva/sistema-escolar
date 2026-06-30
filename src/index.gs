@@ -1709,29 +1709,6 @@ function fillSubjectPlaceholders(body, subjectCode, grades) {
 }
 
 // ============================================================
-// ARQUIVO: CacheUtils.gs
-// ============================================================
-
-/**
- * Wrapper simples para facilitar o uso do CacheService.
- * @param {string} key Chave única para o item.
- * @param {Function} fetcher Função que busca o dado caso o cache expire.
- */
-function getOrFetch(key, fetcher) {
-  const DEFAULT_EXPIRATION_SECONDS = 6 * 60 * 60; // 6h
-  const cache = CacheService.getScriptCache();
-  const cachedValue = cache.get(key);
-
-  if (cachedValue) {
-    return JSON.parse(cachedValue);
-  }
-
-  const value = fetcher();
-  cache.put(key, JSON.stringify(value), DEFAULT_EXPIRATION_SECONDS);
-  return value;
-}
-
-// ============================================================
 // ARQUIVO: Utils.gs
 // ============================================================
 
