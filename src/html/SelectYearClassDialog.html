@@ -80,22 +80,32 @@
             ></span>
           </label>
 
-          <input
-            type="text"
-            x-model="studentSearch"
-            list="studentsList"
-            :disabled="isLoading || isFetchingStudents"
-            placeholder="Comece a digitar o nome do estudante..."
-            class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 transition-all disabled:opacity-50"
-          />
-          <datalist id="studentsList">
-            <template
-              x-for="student in availableStudents"
-              :key="student.studentId"
-            >
-              <option :value="student.studentId" x-text="student.name"></option>
-            </template>
-          </datalist>
+          <template x-if="!isFetchingStudents && availableStudents.length === 0">
+            <p class="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2.5">
+              Nenhum aluno cadastrado nesta turma.
+            </p>
+          </template>
+
+          <template x-if="availableStudents.length > 0">
+            <div>
+              <input
+                type="text"
+                x-model="studentSearch"
+                list="studentsList"
+                :disabled="isLoading || isFetchingStudents"
+                placeholder="Comece a digitar o nome do estudante..."
+                class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 transition-all disabled:opacity-50"
+              />
+              <datalist id="studentsList">
+                <template
+                  x-for="student in availableStudents"
+                  :key="student.studentId"
+                >
+                  <option :value="student.studentId" x-text="student.name"></option>
+                </template>
+              </datalist>
+            </div>
+          </template>
         </div>
       </template>
 
@@ -117,7 +127,7 @@
         </button>
         <button
           @click="submit()"
-          :disabled="isLoading || (actionType === 'single' && isFetchingStudents)"
+          :disabled="isLoading || (actionType === 'single' && (isFetchingStudents || noStudents))"
           class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 focus:outline-none disabled:opacity-70 disabled:cursor-not-allowed"
         >
           <span x-text="isLoading ? 'Processando...' : 'Confirmar'"></span>
@@ -137,6 +147,10 @@
           isLoading: false,
           isFetchingStudents: false,
           error: "",
+
+          get noStudents() {
+            return !this.isFetchingStudents && this.availableStudents.length === 0;
+          },
 
           init() {
             if (this.actionType === "single") {
