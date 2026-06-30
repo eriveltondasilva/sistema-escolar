@@ -150,6 +150,7 @@ const MAX_RUNTIME_MS = 5 * 60 * 1000;
 const MAX_ERRORS_SHOWN = 15;
 const SCRIPT_LOCK_TIMEOUT_MS = 5000;
 
+const WEB_APP_ID = "";
 /**
  * Turmas únicas, não insira duas vezes o mesmo className.
  * @type {ValidClass[]}
@@ -1585,6 +1586,28 @@ function buildSingleStudentReportContext({
 }
 
 /**
+ * Insere o QR Code no documento.
+ * Deve ser chamada logo após a substituição das variáveis de texto.
+ *
+ * @param {GoogleAppsScript.Document.Body} body
+ * @param {string} studentId
+ * @param {number} year
+ */
+function insertQRCode(body, studentId, year) {
+  const validationUrl = `https://script.google.com/macros/s/${WEB_APP_ID}/exec?studentId=${studentId}&year=${year}`;
+  const qrApiUrl = `https://quickchart.io/qr?text=${encodeURIComponent(validationUrl)}&size=80`;
+
+  const imageBlob = UrlFetchApp.fetch(qrApiUrl).getBlob();
+  const element = body.findText("{{qr_code}}");
+
+  if (element) {
+    const parent = element.getElement().getParent().asParagraph();
+    parent.insertInlineImage(0, imageBlob);
+    element.getElement().removeFromParent();
+  }
+}
+
+/**
  * @param {Object} params
  * @param {string} params.studentId
  * @param {string} params.className
@@ -1633,6 +1656,8 @@ function generateReportForStudent({
       const grades = gradesData[subject.name] ?? {};
       fillSubjectPlaceholders(body, subject.code, grades);
     }
+
+    insertQRCode(body, studentId, context.yearNumber);
 
     doc.saveAndClose();
 
