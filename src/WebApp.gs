@@ -58,12 +58,23 @@ function findReportPdfId(studentId, year) {
   }
 
   const pdfFolder = DriveApp.getFolderById(config.pdfsFolderId);
-  const yearFolder = pdfFolder.getFoldersByName(year);
+  const yearFolderIterator = pdfFolder.getFoldersByName(year);
 
-  if (!yearFolder.hasNext()) return null;
+  if (!yearFolderIterator.hasNext()) return null;
 
+  // Busca por prefixo no Drive — pode retornar falsos positivos quando uma
+  // matrícula é prefixo de outra (ex: "001" bate em "0010_...").
+  // O startsWith abaixo garante o match exato antes de retornar o ID.
+  const prefix = `${studentId}_`;
   const searchQuery = `title contains '${studentId}_' and mimeType = 'application/pdf' and trashed = false`;
-  const files = yearFolder.next().searchFiles(searchQuery);
+  const files = yearFolderIterator.next().searchFiles(searchQuery);
 
-  return files.hasNext() ? files.next().getId() : null;
+  while (files.hasNext()) {
+    const file = files.next();
+    if (file.getName().startsWith(prefix)) {
+      return file.getId();
+    }
+  }
+
+  return null;
 }
