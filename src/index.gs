@@ -151,7 +151,24 @@ const MAX_ERRORS_SHOWN = 15;
 const MAX_RUNTIME_MS = 5 * 60 * 1000; // 5 minutos
 const SCRIPT_LOCK_TIMEOUT_MS = 5 * 1000; // 5 segundos
 
-const WEB_APP_ID = "AKfycbxYHe8KgqFlwzFuBOmPQydl3Lw4EgzOD1SiLboBP2OsN6qHnCVKISQ_EtEZupZJh-D-pQ";
+/**
+ * Lê o ID da Web App das propriedades do script, evitando expor a URL
+ * pública no código-fonte. Configure via:
+ *   Extensões > Apps Script > Configurações do Projeto > Propriedades do script
+ *   Chave: WEB_APP_ID  |  Valor: <deployment ID>
+ *
+ * @returns {string}
+ * @throws {Error} Se a propriedade não estiver configurada.
+ */
+function getWebAppId() {
+  const id = PropertiesService.getScriptProperties().getProperty("WEB_APP_ID");
+  if (!id) {
+    throw new Error(
+      'Propriedade "WEB_APP_ID" não configurada. Acesse Configurações do Projeto > Propriedades do script.',
+    );
+  }
+  return id;
+}
 
 /**
  * Turmas únicas, não insira duas vezes o mesmo className.
@@ -613,16 +630,15 @@ function loadGuardiansMap(registrationSheet) {
     }))
     .filter(({ studentId, name }) => studentId.length > 0 && name.length > 0);
 
-  const grouped = Map.groupBy(validRows, ({ studentId }) => studentId);
-
-  for (const [studentId, entries] of grouped) {
-    grouped.set(
-      studentId,
-      entries.map(({ name }) => name),
-    );
-  }
-
-  return grouped;
+  // Usa reduce em vez de Map.groupBy + mutação pós-agrupamento.
+  // Map.groupBy agrupa e retorna imediatamente, mas mutar o mapa durante
+  // o for...of subsequente é comportamento indefinido em JS.
+  return validRows.reduce((map, { studentId, name }) => {
+    const names = map.get(studentId) ?? [];
+    names.push(name);
+    map.set(studentId, names);
+    return map;
+  }, new Map());
 }
 
 /**
@@ -1064,7 +1080,9 @@ function showValidationDialog(issues) {
 
   template.issues = issues;
 
-  const htmlOutput = template.evaluate().setWidth(600).setHeight(520);
+  // O container do ValidationResultDialog usa h-[500px] fixo.
+  // +30px cobre a barra de título do modal do GAS.
+  const htmlOutput = template.evaluate().setWidth(560).setHeight(530);
   ui.showModalDialog(htmlOutput, "Diagnóstico do Sistema");
 }
 
@@ -1137,7 +1155,10 @@ function openSelectYearClassDialog(actionType) {
     template.classes = VALID_CLASSES.map((c) => c.className);
     template.actionType = actionType;
 
-    const height = actionType === "single" ? 320 : 240;
+    // Ambos os modos têm estrutura equivalente (~300px de conteúdo).
+    // 'single' recebe 20px extras para acomodar o aviso de "nenhum aluno"
+    // ou o spinner sem deslocar os botões de ação.
+    const height = actionType === "single" ? 320 : 300;
 
     const htmlOutput = template.evaluate().setWidth(400).setHeight(height);
 
@@ -1327,14 +1348,15 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className, outputMo
 
   let successCount = 0;
   const errors = [];
+  let interrupted = false;
+  let interruptedMessage = "";
   const startTime = Date.now();
   let isFirstStudent = true;
 
   for (const [index, [studentId]] of studentIdRows.entries()) {
     if (Date.now() - startTime > MAX_RUNTIME_MS) {
-      errors.push(
-        `Execução interrompida por tempo: restam alunos a partir da linha ${FIRST_DATA_ROW + index}.`,
-      );
+      interrupted = true;
+      interruptedMessage = `Processo interrompido após ${MAX_RUNTIME_MS / 60000} min. Gere novamente a partir da linha ${FIRST_DATA_ROW + index} (matrícula ${studentId}).`;
       break;
     }
 
@@ -1380,9 +1402,13 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className, outputMo
   template.errors = errorsToShow;
   template.truncatedCount = truncatedCount;
   template.pdfFolderUrl = context.pdfFolder.getUrl();
-  template.mergedPdfUrl = mergedPdfUrl; // null no modo "separate"
+  template.mergedPdfUrl = mergedPdfUrl;
+  template.interrupted = interrupted;
+  template.interruptedMessage = interruptedMessage;
 
-  const htmlOutput = template.evaluate().setWidth(450).setHeight(460);
+  // Altura comporta o caso máximo: header sucesso + bloco de erros com
+  // max-h-[160px] de lista + linha de truncamento + 2 botões de ação + rodapé.
+  const htmlOutput = template.evaluate().setWidth(440).setHeight(480);
   ui.showModalDialog(htmlOutput, "Boletins gerados");
 }
 
@@ -1426,7 +1452,8 @@ function executeStudentReportGeneration_(ui, schoolYearLabel, className, student
   template.pdfUrl = pdfUrl;
   template.pdfFolderUrl = context.pdfFolder.getUrl();
 
-  const htmlOutput = template.evaluate().setWidth(420).setHeight(360);
+  // header sucesso + card matrícula/turma + botões Abrir PDF e Drive + rodapé ≈ 337px.
+  const htmlOutput = template.evaluate().setWidth(400).setHeight(360);
   ui.showModalDialog(htmlOutput, "Boletim gerado");
 }
 
@@ -1515,16 +1542,34 @@ function buildSingleStudentReportContext({
  * @param {string} studentId
  * @param {number} year
  */
+/**
+ * Insere o QR Code no documento.
+ * Deve ser chamada logo após a substituição das variáveis de texto.
+ *
+ * Falhas na geração do QR (API indisponível, bloqueio de rede) são
+ * tratadas como não-fatais: o placeholder é removido e um aviso é
+ * registrado no console, mas a geração do boletim continua normalmente.
+ *
+ * @param {GoogleAppsScript.Document.Body} body
+ * @param {string} studentId
+ * @param {number} year
+ */
 function insertQRCode(body, studentId, year) {
-  const validationUrl = `https://script.google.com/macros/s/${WEB_APP_ID}/exec?studentId=${studentId}&year=${year}`;
-  const qrApiUrl = `https://quickchart.io/qr?text=${encodeURIComponent(validationUrl)}&size=80`;
-
-  const imageBlob = UrlFetchApp.fetch(qrApiUrl).getBlob();
   const element = body.findText("{{qr_code}}");
+  if (!element) return;
 
-  if (element) {
+  try {
+    const webAppId = getWebAppId();
+    const validationUrl = `https://script.google.com/macros/s/${webAppId}/exec?studentId=${studentId}&year=${year}`;
+    const qrApiUrl = `https://quickchart.io/qr?text=${encodeURIComponent(validationUrl)}&size=80`;
+
+    const imageBlob = UrlFetchApp.fetch(qrApiUrl).getBlob();
     const parent = element.getElement().getParent().asParagraph();
     parent.insertInlineImage(0, imageBlob);
+  } catch (e) {
+    console.warn(`insertQRCode: falha ao gerar QR para matrícula ${studentId} — ${e.message}`);
+  } finally {
+    // Remove o placeholder independente de sucesso ou falha.
     element.getElement().removeFromParent();
   }
 }
@@ -1573,7 +1618,7 @@ function generateReportForStudent({
 
     replacePlaceholder(body, "ano_letivo", String(context.yearNumber));
 
-    replacePlaceholder(body, "data_emissao", formatDate(date));
+    replacePlaceholder(body, "data_emissao", formatDate(date, { dateStyle: "long" }));
     replacePlaceholder(body, "hora_emissao", date.toLocaleTimeString());
 
     for (const subject of foundSubjects) {
