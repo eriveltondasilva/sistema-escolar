@@ -213,7 +213,7 @@ const SUBJECT_PLACEHOLDER_FIELDS = [
   {
     suffix: "sf",
     field: "status",
-    format: (status) => status.slice(0, 3).toUpperCase() ?? "--",
+    format: (status) => (status === "" ? "--" : status.slice(0, 3).toUpperCase()),
   },
 ];
 
@@ -1628,11 +1628,10 @@ function generateReportForStudent({
 
     insertQRCode(body, studentId, context.yearNumber, className);
 
-    // Modo "merged": copia o conteúdo para o Doc agregador ANTES de fechar o doc individual.
     if (mergedBody) {
-      if (!isFirstInMerge) mergedBody.appendPageBreak();
-      appendBodyContent(mergedBody, body);
+      appendBodyContent(mergedBody, body, isFirstInMerge);
       doc.saveAndClose();
+
       return null;
     }
 
@@ -1683,10 +1682,15 @@ function trashPreviousPdfVersions(pdfFolder, fileName, keepFileId) {
  * @param {GoogleAppsScript.Document.Body} targetBody
  * @param {GoogleAppsScript.Document.Body} sourceBody
  */
-function appendBodyContent(targetBody, sourceBody) {
+function appendBodyContent(targetBody, sourceBody, isFirst) {
   const totalChildren = sourceBody.getNumChildren();
+  const childrenToCopy = totalChildren - 1; // pula o parágrafo vazio final
 
-  for (let i = 0; i < totalChildren; i++) {
+  if (!isFirst) {
+    targetBody.appendParagraph("").appendPageBreak();
+  }
+
+  for (let i = 0; i < childrenToCopy; i++) {
     const element = sourceBody.getChild(i);
 
     switch (element.getType()) {
