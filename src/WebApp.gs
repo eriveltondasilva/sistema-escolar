@@ -3,18 +3,18 @@
  * @returns {GoogleAppsScript.HTML.HtmlOutput}
  */
 function doGet({ parameter }) {
-  const { studentId, year } = parameter;
+  const { studentId, year, className } = parameter;
 
-  if (!studentId || !year) {
-    return renderError("Matrícula e Ano são obrigatórios para realizar a consulta.");
+  if (!studentId || !year || !className) {
+    return renderError("Matrícula, Ano e Turma são obrigatórios para realizar a consulta.");
   }
 
   try {
-    const fileId = findReportPdfId(studentId, year);
+    const fileId = findReportPdfId(studentId, year, className);
 
     if (!fileId) {
       return renderError(
-        "O boletim ainda não foi gerado ou não foi encontrado para esta matrícula.",
+        "O boletim ainda não foi gerado ou não foi encontrado para esta matrícula na turma informada.",
       );
     }
 
@@ -47,10 +47,12 @@ function renderError(message) {
 /**
  * @param {string} studentId
  * @param {string} year
+ * @param {string} className
  * @returns {string|null}
  */
-function findReportPdfId(studentId, year) {
+function findReportPdfId(studentId, year, className) {
   let config;
+
   try {
     config = loadConfig();
   } catch (e) {
@@ -62,12 +64,17 @@ function findReportPdfId(studentId, year) {
 
   if (!yearFolderIterator.hasNext()) return null;
 
-  // Busca por prefixo no Drive — pode retornar falsos positivos quando uma
-  // matrícula é prefixo de outra (ex: "001" bate em "0010_...").
-  // O startsWith abaixo garante o match exato antes de retornar o ID.
+  const yearFolder = yearFolderIterator.next();
+  const classFolderIterator = yearFolder.getFoldersByName(className);
+
+  if (!classFolderIterator.hasNext()) return null;
+
+  const classFolder = classFolderIterator.next();
+
   const prefix = `${studentId}_`;
-  const searchQuery = `title contains '${studentId}_' and mimeType = 'application/pdf' and trashed = false`;
-  const files = yearFolderIterator.next().searchFiles(searchQuery);
+  const searchQuery = `title contains '${prefix}' and mimeType = 'application/pdf' and trashed = false`;
+
+  const files = classFolder.searchFiles(searchQuery);
 
   while (files.hasNext()) {
     const file = files.next();
