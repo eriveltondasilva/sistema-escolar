@@ -213,7 +213,7 @@ const SUBJECT_PLACEHOLDER_FIELDS = [
   {
     suffix: "sf",
     field: "status",
-    format: (status) => status.slice(0, 3).toUpperCase() ?? "",
+    format: (status) => status.slice(0, 3).toUpperCase() ?? "--",
   },
 ];
 
@@ -1393,6 +1393,8 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className, outputMo
       mergedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
       mergedPdfUrl = mergedFile.getUrl();
+
+      trashPreviousPdfVersions(context.pdfFolder, mergedDocName, mergedFile.getId());
     } finally {
       DriveApp.getFileById(mergedDoc.getId()).setTrashed(true);
     }
@@ -1763,7 +1765,7 @@ function formatGuardianNames(names) {
  */
 function formatGrade(value) {
   const trimmedValue = String(value ?? "").trim();
-  if (trimmedValue === "") return "";
+  if (trimmedValue === "") return "--";
 
   const number = Number(trimmedValue);
   if (Number.isNaN(number)) return trimmedValue;
