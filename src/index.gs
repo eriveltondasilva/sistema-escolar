@@ -1583,17 +1583,18 @@ function generateReportForStudent({
 
     insertQRCode(body, studentId, context.yearNumber);
 
-    doc.saveAndClose();
-
-    // Modo "merged": copia o conteúdo preenchido para o Doc agregador e
-    // descarta a cópia individual. O `finally` abaixo cuida do setTrashed.
+    // Modo "merged": copia o conteúdo para o Doc agregador ANTES de fechar
+    // o doc individual. Após saveAndClose() o body fica inválido — qualquer
+    // acesso a ele lança "O documento está fechado".
     if (mergedBody) {
       if (!isFirstInMerge) mergedBody.appendPageBreak();
       appendBodyContent(mergedBody, body);
+      doc.saveAndClose();
       return null;
     }
 
-    // Modo "separate" (padrão): comportamento atual, sem alteração.
+    // Modo "separate" (padrão): fecha e exporta o PDF individual.
+    doc.saveAndClose();
     const pdfBlob = docCopy.getAs("application/pdf");
     const pdfFile = context.pdfFolder.createFile(pdfBlob).setName(`${fileName}.pdf`);
 
