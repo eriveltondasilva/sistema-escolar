@@ -10,7 +10,8 @@
     <main
       class="flex h-full flex-col justify-between bg-slate-50 p-5 font-sans text-slate-800 antialiased"
     >
-      <div class="space-y-4">
+      <div class="space-y-3">
+        <!-- Cabeçalho de sucesso -->
         <header
           class="flex items-start space-x-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-600"
         >
@@ -19,49 +20,66 @@
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
-            xmlns="http://www.w3.org/2000/svg"
           >
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
               stroke-width="2"
               d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-            ></path>
+            />
           </svg>
           <div class="text-sm">
             <p class="font-semibold text-emerald-900">
               <?= successCount ?> boletim(ns) gerado(s) com sucesso
             </p>
-            <p class="text-emerald-700">Turma: <?= className ?> ( <?= schoolYearLabel ?> )</p>
+            <p class="text-emerald-700">Turma: <?= className ?> (<?= schoolYearLabel ?>)</p>
           </div>
         </header>
 
+        <!-- Aviso de interrupção por timeout — semanticamente diferente de um erro de geração -->
+        <? if (interrupted) { ?>
+        <div class="flex items-start space-x-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+          <svg
+            class="mt-0.5 h-5 w-5 shrink-0 text-amber-500"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <div class="text-sm">
+            <p class="font-semibold text-amber-900">Execução interrompida por tempo</p>
+            <p class="text-amber-700"><?= interruptedMessage ?></p>
+          </div>
+        </div>
+        <? } ?>
+
+        <!-- Erros de geração individual -->
         <? if (errors.length > 0) { ?>
         <div class="space-y-2 rounded-md border border-red-200 bg-red-50 p-3">
           <div class="flex items-center space-x-2 text-red-600">
-            <svg
-              class="h-5 w-5 shrink-0"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
+            <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 stroke-width="2"
                 d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              ></path>
+              />
             </svg>
             <h2 class="text-sm font-semibold text-red-900">
-              <?= errors.length ?> erro(s) encontrado(s):
+              <?= errors.length ?> erro(s) na geração:
             </h2>
           </div>
 
           <ul
-            class="max-h-[160px] divide-y divide-red-50 overflow-y-auto rounded border border-red-100 bg-white p-2 text-xs text-red-700"
+            class="max-h-[140px] divide-y divide-red-50 overflow-y-auto rounded border border-red-100 bg-white p-2 text-xs text-red-700"
           >
-            <? errors.forEach(function (error) { ?>
+            <? errors.forEach(function(error) { ?>
             <li class="list-none py-1 font-mono break-words text-red-600 first:pt-0 last:pb-0">
               <?= error ?>
             </li>
@@ -70,13 +88,14 @@
 
           <? if (truncatedCount > 0) { ?>
           <p class="pt-1 text-xs text-red-500 italic">
-            ... e mais <?= truncatedCount ?> erro(s) não exibido(s) aqui.
+            ... e mais <?= truncatedCount ?> erro(s) não exibido(s).
           </p>
           <? } ?>
         </div>
         <? } ?>
 
-        <div class="flex flex-col space-y-2 pt-2">
+        <!-- Ações -->
+        <div class="flex flex-col space-y-2 pt-1">
           <? if (mergedPdfUrl) { ?>
           <a
             href="<?= mergedPdfUrl ?>"
@@ -96,7 +115,7 @@
         </div>
       </div>
 
-      <footer class="mt-6 border-t border-slate-200 pt-4">
+      <footer class="mt-5 border-t border-slate-200 pt-4">
         <button
           onclick="google.script.host.close()"
           class="w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 focus:outline-none"

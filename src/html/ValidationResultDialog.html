@@ -13,6 +13,7 @@
     </script>
 
     <div x-data="diagnosticPanel()" class="flex h-[500px] flex-col">
+      <!-- Estado: sem problemas -->
       <template x-if="issues.length === 0">
         <div class="flex flex-1 flex-col items-center justify-center space-y-4 p-6 text-center">
           <div
@@ -24,7 +25,7 @@
                 stroke-linejoin="round"
                 stroke-width="2"
                 d="M5 13l4 4L19 7"
-              ></path>
+              />
             </svg>
           </div>
           <h2 class="text-xl font-bold text-slate-800">Tudo Certo!</h2>
@@ -35,11 +36,12 @@
         </div>
       </template>
 
+      <!-- Estado: com problemas -->
       <template x-if="issues.length > 0">
         <div class="flex h-full flex-col">
+          <!-- Filtros -->
           <div class="shrink-0 border-b border-slate-200 bg-white p-4">
             <h2 class="mb-3 text-lg font-semibold tracking-tight">Resultados da Verificação</h2>
-
             <div class="flex space-x-2 rounded-lg bg-slate-100 p-1">
               <button
                 @click="filter = 'all'"
@@ -65,6 +67,7 @@
             </div>
           </div>
 
+          <!-- Lista de issues -->
           <div class="flex-1 space-y-3 overflow-y-auto p-4">
             <template x-for="(issue, index) in filteredIssues" :key="index">
               <div
@@ -83,10 +86,9 @@
                       stroke-linejoin="round"
                       stroke-width="2"
                       d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    ></path>
+                    />
                   </svg>
                 </template>
-
                 <template x-if="issue.type === 'warning'">
                   <svg
                     class="mt-0.5 h-5 w-5 shrink-0 text-amber-500"
@@ -99,7 +101,7 @@
                       stroke-linejoin="round"
                       stroke-width="2"
                       d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                    ></path>
+                    />
                   </svg>
                 </template>
 
@@ -109,7 +111,6 @@
                     class="text-sm leading-snug text-wrap break-words"
                     x-text="issue.text"
                   ></p>
-
                   <template x-if="issue.url">
                     <a
                       :href="issue.url"
@@ -129,7 +130,7 @@
                           stroke-linejoin="round"
                           stroke-width="2"
                           d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                        ></path>
+                        />
                       </svg>
                     </a>
                   </template>
@@ -140,6 +141,7 @@
         </div>
       </template>
 
+      <!-- Rodapé fixo -->
       <div class="shrink-0 border-t border-slate-200 bg-white p-4">
         <button
           onclick="google.script.host.close()"
@@ -154,7 +156,7 @@
       function diagnosticPanel() {
         return {
           issues: serverIssues || [],
-          filter: "all", // 'all' | 'error' | 'warning'
+          filter: "all",
 
           get errorCount() {
             return this.issues.filter((i) => i.type === "error").length;

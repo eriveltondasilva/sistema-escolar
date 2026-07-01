@@ -4,22 +4,20 @@
     <base target="_top" />
     <meta charset="UTF-8" />
     <script src="https://cdn.tailwindcss.com"></script>
-    <script
-      defer
-      src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
-    ></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   </head>
-  <body class="bg-white text-slate-900 antialiased p-5">
+
+  <body class="bg-white p-5 text-slate-900 antialiased">
     <div x-data="reportForm()" class="space-y-4">
       <div>
-        <label
-          class="text-xs font-medium text-slate-500 uppercase tracking-wider block mb-1"
-          >Ano Letivo</label
-        >
+        <label class="mb-1 block text-xs font-medium tracking-wider text-slate-500 uppercase">
+          Ano Letivo
+        </label>
         <select
           x-model="schoolYear"
           :disabled="isLoading"
-          class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 transition-all disabled:opacity-50"
+          @change="actionType === 'single' && fetchStudents()"
+          class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm transition-all focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none disabled:opacity-50"
         >
           <? for (const year of years) { ?>
           <option value="<?= year ?>"><?= year ?></option>
@@ -28,14 +26,14 @@
       </div>
 
       <div>
-        <label
-          class="text-xs font-medium text-slate-500 uppercase tracking-wider block mb-1"
-          >Turma</label
-        >
+        <label class="mb-1 block text-xs font-medium tracking-wider text-slate-500 uppercase">
+          Turma
+        </label>
         <select
           x-model="className"
           :disabled="isLoading"
-          class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 transition-all disabled:opacity-50"
+          @change="actionType === 'single' && fetchStudents()"
+          class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm transition-all focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none disabled:opacity-50"
         >
           <? for (const cls of classes) { ?>
           <option value="<?= cls ?>"><?= cls ?></option>
@@ -43,18 +41,18 @@
         </select>
       </div>
 
+      <!-- Formato de saída — apenas no modo "class" -->
       <template x-if="actionType === 'class'">
         <div>
-          <label
-            class="text-xs font-medium text-slate-500 uppercase tracking-wider block mb-1"
-            >Formato de saída</label
-          >
-          <div class="flex rounded-md border border-slate-200 overflow-hidden text-sm shadow-sm">
+          <label class="mb-1 block text-xs font-medium tracking-wider text-slate-500 uppercase">
+            Formato de saída
+          </label>
+          <div class="flex overflow-hidden rounded-md border border-slate-200 text-sm shadow-sm">
             <button
               type="button"
               @click="outputMode = 'separate'"
               :class="outputMode === 'separate' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'"
-              class="flex-1 px-3 py-2 font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-slate-400"
+              class="flex-1 px-3 py-2 font-medium transition-colors focus:ring-2 focus:ring-slate-400 focus:outline-none focus:ring-inset"
             >
               Arquivos separados
             </button>
@@ -62,26 +60,31 @@
               type="button"
               @click="outputMode = 'merged'"
               :class="outputMode === 'merged' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'"
-              class="flex-1 px-3 py-2 font-medium transition-colors border-l border-slate-200 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-slate-400"
+              class="flex-1 border-l border-slate-200 px-3 py-2 font-medium transition-colors focus:ring-2 focus:ring-slate-400 focus:outline-none focus:ring-inset"
             >
               Arquivo único
             </button>
           </div>
         </div>
       </template>
+
+      <!-- Campo de aluno — apenas no modo "single" -->
+      <template x-if="actionType === 'single'">
         <div>
           <label
-            class="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center mb-1"
+            class="mb-1 flex items-center text-xs font-medium tracking-wider text-slate-500 uppercase"
           >
-            Aluno (Digite o Nome ou Matrícula)
+            Aluno (Nome ou Matrícula)
             <span
               x-show="isFetchingStudents"
-              class="ml-2 inline-block w-3 h-3 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"
+              class="ml-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
             ></span>
           </label>
 
           <template x-if="!isFetchingStudents && availableStudents.length === 0">
-            <p class="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2.5">
+            <p
+              class="rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs font-medium text-amber-700"
+            >
               Nenhum aluno cadastrado nesta turma.
             </p>
           </template>
@@ -94,13 +97,10 @@
                 list="studentsList"
                 :disabled="isLoading || isFetchingStudents"
                 placeholder="Comece a digitar o nome do estudante..."
-                class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 transition-all disabled:opacity-50"
+                class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm transition-all focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none disabled:opacity-50"
               />
               <datalist id="studentsList">
-                <template
-                  x-for="student in availableStudents"
-                  :key="student.studentId"
-                >
+                <template x-for="student in availableStudents" :key="student.studentId">
                   <option :value="student.studentId" x-text="student.name"></option>
                 </template>
               </datalist>
@@ -113,7 +113,7 @@
         x-show="error"
         x-text="error"
         x-transition
-        class="text-xs font-medium text-red-600 bg-red-50 p-2.5 rounded-md border border-red-100"
+        class="rounded-md border border-red-100 bg-red-50 p-2.5 text-xs font-medium text-red-600"
         style="display: none"
       ></div>
 
@@ -121,14 +121,14 @@
         <button
           @click="google.script.host.close()"
           :disabled="isLoading"
-          class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-slate-200 bg-white hover:bg-slate-50 px-4 py-2 text-slate-700 focus:outline-none disabled:opacity-50"
+          class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none disabled:opacity-50"
         >
           Cancelar
         </button>
         <button
           @click="submit()"
           :disabled="isLoading || (actionType === 'single' && (isFetchingStudents || noStudents))"
-          class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 focus:outline-none disabled:opacity-70 disabled:cursor-not-allowed"
+          class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
         >
           <span x-text="isLoading ? 'Processando...' : 'Confirmar'"></span>
         </button>
@@ -155,8 +155,8 @@
           init() {
             if (this.actionType === "single") {
               this.fetchStudents();
-              this.$watch("schoolYear", () => this.fetchStudents());
-              this.$watch("className", () => this.fetchStudents());
+              // Os @change nos selects disparam fetchStudents diretamente,
+              // então os $watch aqui foram removidos para evitar double-fetch.
             }
           },
 
@@ -196,11 +196,7 @@
                   this.error = err.message;
                   this.isLoading = false;
                 })
-                .executeStudentReportGeneration(
-                  this.schoolYear,
-                  this.className,
-                  selectedId,
-                );
+                .executeStudentReportGeneration(this.schoolYear, this.className, selectedId);
             } else {
               google.script.run
                 .withSuccessHandler(() => google.script.host.close())
