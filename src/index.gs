@@ -1384,8 +1384,14 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className, outputMo
   if (mergedDoc) {
     try {
       mergedDoc.saveAndClose();
+      Utilities.sleep(2000); // 2 segundos de respiro para o Drive sincronizar o buffer
+
       const pdfBlob = DriveApp.getFileById(mergedDoc.getId()).getAs("application/pdf");
       const mergedFile = context.pdfFolder.createFile(pdfBlob).setName(`${mergedDocName}.pdf`);
+
+      // Define acesso público de leitura também para o PDF mesclado da turma
+      mergedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
       mergedPdfUrl = mergedFile.getUrl();
     } finally {
       DriveApp.getFileById(mergedDoc.getId()).setTrashed(true);
@@ -1538,14 +1544,6 @@ function buildSingleStudentReportContext({
  * Insere o QR Code no documento.
  * Deve ser chamada logo após a substituição das variáveis de texto.
  *
- * @param {GoogleAppsScript.Document.Body} body
- * @param {string} studentId
- * @param {number} year
- */
-/**
- * Insere o QR Code no documento.
- * Deve ser chamada logo após a substituição das variáveis de texto.
- *
  * Falhas na geração do QR (API indisponível, bloqueio de rede) são
  * tratadas como não-fatais: o placeholder é removido e um aviso é
  * registrado no console, mas a geração do boletim continua normalmente.
@@ -1553,14 +1551,15 @@ function buildSingleStudentReportContext({
  * @param {GoogleAppsScript.Document.Body} body
  * @param {string} studentId
  * @param {number} year
+ * @param {string} className
  */
-function insertQRCode(body, studentId, year) {
+function insertQRCode(body, studentId, year, className) {
   const element = body.findText("{{qr_code}}");
   if (!element) return;
 
   try {
     const webAppId = getWebAppId();
-    const validationUrl = `https://script.google.com/macros/s/${webAppId}/exec?studentId=${studentId}&year=${year}`;
+    const validationUrl = `https://script.google.com/macros/s/${webAppId}/exec?studentId=${studentId}&year=${year}&className=${encodeURIComponent(className)}`;
     const qrApiUrl = `https://quickchart.io/qr?text=${encodeURIComponent(validationUrl)}&size=80`;
 
     const imageBlob = UrlFetchApp.fetch(qrApiUrl).getBlob();
@@ -1580,7 +1579,7 @@ function insertQRCode(body, studentId, year) {
  * @param {string} params.className
  * @param {Subject[]} params.foundSubjects
  * @param {ReportContext} params.context
- * @returns {string} O URL do arquivo PDF gerado
+ * @returns {string|null} O URL do arquivo PDF gerado
  */
 function generateReportForStudent({
   studentId,
@@ -1615,7 +1614,6 @@ function generateReportForStudent({
     replacePlaceholder(body, "serie", classInfo?.className ?? "");
     replacePlaceholder(body, "turma", "Única");
     replacePlaceholder(body, "turno", classInfo?.shift ?? "");
-
     replacePlaceholder(body, "ano_letivo", String(context.yearNumber));
 
     replacePlaceholder(body, "data_emissao", formatDate(date, { dateStyle: "long" }));
@@ -1626,11 +1624,9 @@ function generateReportForStudent({
       fillSubjectPlaceholders(body, subject.code, grades);
     }
 
-    insertQRCode(body, studentId, context.yearNumber);
+    insertQRCode(body, studentId, context.yearNumber, className);
 
-    // Modo "merged": copia o conteúdo para o Doc agregador ANTES de fechar
-    // o doc individual. Após saveAndClose() o body fica inválido — qualquer
-    // acesso a ele lança "O documento está fechado".
+    // Modo "merged": copia o conteúdo para o Doc agregador ANTES de fechar o doc individual.
     if (mergedBody) {
       if (!isFirstInMerge) mergedBody.appendPageBreak();
       appendBodyContent(mergedBody, body);
@@ -1642,6 +1638,9 @@ function generateReportForStudent({
     doc.saveAndClose();
     const pdfBlob = docCopy.getAs("application/pdf");
     const pdfFile = context.pdfFolder.createFile(pdfBlob).setName(`${fileName}.pdf`);
+
+    // Define acesso público de leitura para o arquivo individual
+    pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
     trashPreviousPdfVersions(context.pdfFolder, fileName, pdfFile.getId());
     return pdfFile.getUrl();

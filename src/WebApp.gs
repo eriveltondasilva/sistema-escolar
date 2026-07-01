@@ -1,4 +1,16 @@
 /**
+ * IMPORTANTE: ATUALIZAÇÃO DE PRODUÇÃO
+ * Sempre que alterar o código deste Web App, gerar uma nova versão é obrigatório.
+ * Salvar o arquivo apenas atualiza o rascunho de desenvolvimento.
+ *
+ * Passo a passo para aplicar as alterações na URL pública:
+ * 1. Clique em "Implantar" (canto superior direito) > "Gerenciar implantações".
+ * 2. Selecione a implantação ativa e clique no ícone de Lápis (Editar).
+ * 3. No campo "Versão", altere para "Nova versão".
+ * 4. Adicione uma descrição (opcional) e clique em "Implantar".
+ */
+
+/**
  * @param {GoogleAppsScript.Events.DoGet} params
  * @returns {GoogleAppsScript.HTML.HtmlOutput}
  */
