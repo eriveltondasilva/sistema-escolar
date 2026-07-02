@@ -1155,10 +1155,7 @@ function openSelectYearClassDialog(actionType) {
     template.classes = VALID_CLASSES.map((c) => c.className);
     template.actionType = actionType;
 
-    // Ambos os modos têm estrutura equivalente (~300px de conteúdo).
-    // 'single' recebe 20px extras para acomodar o aviso de "nenhum aluno"
-    // ou o spinner sem deslocar os botões de ação.
-    const height = actionType === "single" ? 320 : 300;
+    const height = actionType === "single" ? 320 : 240;
 
     const htmlOutput = template.evaluate().setWidth(400).setHeight(height);
 
@@ -1295,11 +1292,9 @@ function getStudentsDataForClass(schoolYearLabel, className) {
   }));
 }
 
-function executeClassReportsGeneration(schoolYearLabel, className, outputMode) {
-  const mode = outputMode === "merged" ? "merged" : "separate";
-
+function executeClassReportsGeneration(schoolYearLabel, className) {
   withScriptLock((ui) => {
-    executeClassReportsGeneration_(ui, schoolYearLabel, className, mode);
+    executeClassReportsGenerationInternal_(ui, schoolYearLabel, className);
   }, "Já existe uma geração de boletins em andamento. Tente novamente em alguns instantes.");
 }
 
@@ -1308,11 +1303,11 @@ function executeStudentReportGeneration(schoolYearLabel, className, studentId) {
   if (!trimmedId) throw new Error("Matrícula não pode ser vazia.");
 
   withScriptLock((ui) => {
-    executeStudentReportGeneration_(ui, schoolYearLabel, className, trimmedId);
+    executeStudentReportGenerationInternal_(ui, schoolYearLabel, className, trimmedId);
   }, "Já existe uma geração de boletim em andamento. Tente novamente em alguns instantes.");
 }
 
-function executeClassReportsGeneration_(ui, schoolYearLabel, className, outputMode) {
+function executeClassReportsGenerationInternal_(ui, schoolYearLabel, className) {
   const config = loadConfig();
   const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
   const classFile = getClassSpreadsheetFile(yearFolder, schoolYearLabel, className);
@@ -1339,19 +1334,11 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className, outputMo
     foundSubjects,
   });
 
-  // Modo "merged": cria um Doc agregador vazio que receberá o conteúdo de
-  // cada boletim. Só existe durante a execução — é apagado após exportar o
-  // PDF final. No modo "separate" (padrão), fica null e o comportamento
-  // atual de cada aluno gerar seu próprio PDF é mantido sem alteração.
-  const mergedDocName = `${className}_${schoolYearLabel}_completo`;
-  const mergedDoc = outputMode === "merged" ? DocumentApp.create(mergedDocName) : null;
-
   let successCount = 0;
   const errors = [];
   let interrupted = false;
   let interruptedMessage = "";
   const startTime = Date.now();
-  let isFirstStudent = true;
 
   for (const [index, [studentId]] of studentIdRows.entries()) {
     if (Date.now() - startTime > MAX_RUNTIME_MS) {
@@ -1369,34 +1356,10 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className, outputMo
         className,
         foundSubjects,
         context,
-        mergedBody: mergedDoc?.getBody() ?? null,
-        isFirstInMerge: isFirstStudent,
       });
-      isFirstStudent = false;
       successCount++;
     } catch (e) {
       errors.push(`Linha ${rowNumber} (matrícula ${studentId}): ${e.message}`);
-    }
-  }
-
-  // Exporta o Doc agregador como um único PDF e limpa o Doc temporário.
-  let mergedPdfUrl = null;
-  if (mergedDoc) {
-    try {
-      mergedDoc.saveAndClose();
-      Utilities.sleep(2000); // 2 segundos de respiro para o Drive sincronizar o buffer
-
-      const pdfBlob = DriveApp.getFileById(mergedDoc.getId()).getAs("application/pdf");
-      const mergedFile = context.pdfFolder.createFile(pdfBlob).setName(`${mergedDocName}.pdf`);
-
-      // Define acesso público de leitura também para o PDF mesclado da turma
-      mergedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-
-      mergedPdfUrl = mergedFile.getUrl();
-
-      trashPreviousPdfVersions(context.pdfFolder, mergedDocName, mergedFile.getId());
-    } finally {
-      DriveApp.getFileById(mergedDoc.getId()).setTrashed(true);
     }
   }
 
@@ -1410,17 +1373,14 @@ function executeClassReportsGeneration_(ui, schoolYearLabel, className, outputMo
   template.errors = errorsToShow;
   template.truncatedCount = truncatedCount;
   template.pdfFolderUrl = context.pdfFolder.getUrl();
-  template.mergedPdfUrl = mergedPdfUrl;
   template.interrupted = interrupted;
   template.interruptedMessage = interruptedMessage;
 
-  // Altura comporta o caso máximo: header sucesso + bloco de erros com
-  // max-h-[160px] de lista + linha de truncamento + 2 botões de ação + rodapé.
-  const htmlOutput = template.evaluate().setWidth(440).setHeight(480);
+  const htmlOutput = template.evaluate().setWidth(440).setHeight(440);
   ui.showModalDialog(htmlOutput, "Boletins gerados");
 }
 
-function executeStudentReportGeneration_(ui, schoolYearLabel, className, studentId) {
+function executeStudentReportGenerationInternal_(ui, schoolYearLabel, className, studentId) {
   const config = loadConfig();
   const yearFolder = getSchoolYearFolder(config, schoolYearLabel);
   const classFile = getClassSpreadsheetFile(yearFolder, schoolYearLabel, className);
@@ -1581,16 +1541,9 @@ function insertQRCode(body, studentId, year, className) {
  * @param {string} params.className
  * @param {Subject[]} params.foundSubjects
  * @param {ReportContext} params.context
- * @returns {string|null} O URL do arquivo PDF gerado
+ * @returns {string} O URL do arquivo PDF gerado
  */
-function generateReportForStudent({
-  studentId,
-  className,
-  foundSubjects,
-  context,
-  mergedBody = null,
-  isFirstInMerge = false,
-}) {
+function generateReportForStudent({ studentId, className, foundSubjects, context }) {
   const personalData = getPersonalData(studentId, context);
   const gradesData = getGradesForStudent(studentId, foundSubjects, context);
 
@@ -1628,22 +1581,14 @@ function generateReportForStudent({
 
     insertQRCode(body, studentId, context.yearNumber, className);
 
-    if (mergedBody) {
-      appendBodyContent(mergedBody, body, isFirstInMerge);
-      doc.saveAndClose();
-
-      return null;
-    }
-
-    // Modo "separate" (padrão): fecha e exporta o PDF individual.
     doc.saveAndClose();
     const pdfBlob = docCopy.getAs("application/pdf");
     const pdfFile = context.pdfFolder.createFile(pdfBlob).setName(`${fileName}.pdf`);
 
-    // Define acesso público de leitura para o arquivo individual
     pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
     trashPreviousPdfVersions(context.pdfFolder, fileName, pdfFile.getId());
+
     return pdfFile.getUrl();
   } finally {
     docCopy.setTrashed(true);
@@ -1661,48 +1606,6 @@ function trashPreviousPdfVersions(pdfFolder, fileName, keepFileId) {
     const file = existingFiles.next();
     if (file.getId() !== keepFileId) {
       file.setTrashed(true);
-    }
-  }
-}
-
-/**
- * Copia todos os elementos do Body de origem para o Body de destino.
- * Usado no modo "merged" para agregar o conteúdo de cada boletim gerado
- * num Doc único antes de exportar o PDF final da turma.
- *
- * O `.copy()` em cada elemento é obrigatório: sem ele, o Apps Script tenta
- * mover o elemento original (que ainda pertence ao Doc de origem) e lança
- * um erro de "element already exists in parent".
- *
- * Tipos suportados cobrem todos os elementos que um boletim pode ter:
- * parágrafos (inclusive os que contêm InlineImages como o QR code),
- * tabelas, e itens de lista. Outros tipos (HorizontalRule, etc.) são
- * ignorados silenciosamente — não ocorrem num boletim padrão.
- *
- * @param {GoogleAppsScript.Document.Body} targetBody
- * @param {GoogleAppsScript.Document.Body} sourceBody
- */
-function appendBodyContent(targetBody, sourceBody, isFirst) {
-  const totalChildren = sourceBody.getNumChildren();
-  const childrenToCopy = totalChildren - 1; // pula o parágrafo vazio final
-
-  if (!isFirst) {
-    targetBody.appendParagraph("").appendPageBreak();
-  }
-
-  for (let i = 0; i < childrenToCopy; i++) {
-    const element = sourceBody.getChild(i);
-
-    switch (element.getType()) {
-      case DocumentApp.ElementType.PARAGRAPH:
-        targetBody.appendParagraph(element.asParagraph().copy());
-        break;
-      case DocumentApp.ElementType.TABLE:
-        targetBody.appendTable(element.asTable().copy());
-        break;
-      case DocumentApp.ElementType.LIST_ITEM:
-        targetBody.appendListItem(element.asListItem().copy());
-        break;
     }
   }
 }
