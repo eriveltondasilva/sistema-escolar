@@ -26,10 +26,11 @@
  *                              boletim individual/da turma)
  *    7. ReportGeneration.gs  — montagem do contexto e geração do PDF
  *                              do boletim em si
- *    8. CacheUtils.gs        — armazenamento de dados em memória
- *    9. Utils.gs             — formatação de valores e substituição de
+ *    8. Utils.gs             — formatação de valores e substituição de
  *                              placeholders no documento
- *
+ */
+
+/**
  * PADRÃO DE TRATAMENTO DE ERRO
  * --------------------------------
  * Este projeto tem três categorias de operação, e cada uma comunica
@@ -139,11 +140,13 @@
 
 const DEFAULT_LOCALE = "pt-BR";
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
+
 const SCHOOL_YEAR_LABEL_PREFIX = "Ano Letivo - ";
 
 const CONFIG_START_ROW = 4;
 const SUMMARY_FIRST_DATA_ROW = 4;
 const FIRST_DATA_ROW = 5;
+
 const GRADE_COLUMNS_COUNT = 17;
 
 const MAX_ERRORS_SHOWN = 15;
@@ -162,11 +165,13 @@ const SCRIPT_LOCK_TIMEOUT_MS = 5 * 1000; // 5 segundos
  */
 function getWebAppId() {
   const id = PropertiesService.getScriptProperties().getProperty("WEB_APP_ID");
+
   if (!id) {
     throw new Error(
       'Propriedade "WEB_APP_ID" não configurada. Acesse Configurações do Projeto > Propriedades do script.',
     );
   }
+
   return id;
 }
 
@@ -181,7 +186,10 @@ const VALID_CLASSES = [
   { className: "9º Ano", stage: "Ensino Fundamental II", shift: "Vespertino" },
 ];
 
-/** @type {Subject[]} */
+/**
+ * Subjetos únicos, não insira duas vezes o mesmo code.
+ *  @type {Subject[]}
+ */
 const VALID_SUBJECTS = [
   { name: "Arte", code: "ART" },
   { name: "Ciências", code: "CIE" },
@@ -210,11 +218,7 @@ const SUBJECT_PLACEHOLDER_FIELDS = [
   { suffix: "ms2", field: "average2S", format: formatGrade },
   { suffix: "mf", field: "finalGrade", format: formatGrade },
   { suffix: "tf", field: "totalAbsences", format: formatValue },
-  {
-    suffix: "sf",
-    field: "status",
-    format: (status) => (status === "" ? "--" : status.slice(0, 3).toUpperCase()),
-  },
+  { suffix: "sf", field: "status", format: formatStatus },
 ];
 
 const CONFIG_KEY_MAP = {
@@ -311,7 +315,7 @@ function onOpen() {
     .addItem("Gerar boletins da turma", "generateClassReports")
     .addSeparator()
     .addItem("Criar ano letivo", "createSchoolYear")
-    .addItem("Verificar configuração", "checkConfiguration")
+    .addItem("Verificar sistema", "checkSystem")
     .addToUi();
 }
 
@@ -328,13 +332,14 @@ function listSchoolYears(config) {
   const folderIterator = rootFolder.getFolders();
 
   const folderNames = [];
+
   while (folderIterator.hasNext()) {
     const folder = folderIterator.next().getName();
-    if (!/\d{4}/.test(folder)) continue;
-    folderNames.push(folder);
+
+    if (/\d{4}/.test(folder)) folderNames.push(folder);
   }
 
-  return folderNames.sort();
+  return folderNames.toSorted();
 }
 
 /**
@@ -361,6 +366,7 @@ function getSchoolYearFolder(config, schoolYearLabel) {
  */
 function extractYearNumber(schoolYearLabel) {
   const match = schoolYearLabel.match(/\d{4}/);
+
   if (!match) {
     throw new Error(
       `Não foi possível identificar um ano de 4 dígitos no nome da pasta "${schoolYearLabel}".`,
@@ -378,6 +384,7 @@ function extractYearNumber(schoolYearLabel) {
  */
 function getClassSpreadsheetFile(yearFolder, schoolYearLabel, className) {
   const files = yearFolder.getFilesByName(className);
+
   if (!files.hasNext()) {
     throw new Error(
       `Planilha da turma "${className}" não encontrada dentro de "Anos Letivos/${schoolYearLabel}".`,
@@ -385,6 +392,7 @@ function getClassSpreadsheetFile(yearFolder, schoolYearLabel, className) {
   }
 
   const file = files.next();
+
   if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) {
     throw new Error(
       `O arquivo "${className}" em "Anos Letivos/${schoolYearLabel}" não é uma planilha do Google Sheets.`,
@@ -436,16 +444,6 @@ function getClassTemplateFile(config) {
   }
 
   return file;
-}
-
-/**
- * @param {AppConfig} config
- * @param {string} schoolYearLabel
- * @returns {boolean}
- */
-function schoolYearFolderExists(config, schoolYearLabel) {
-  const rootFolder = DriveApp.getFolderById(config.schoolYearsFolderId);
-  return rootFolder.getFoldersByName(schoolYearLabel).hasNext();
 }
 
 /**
@@ -1179,7 +1177,20 @@ function generateClassReports() {
 function createSchoolYear() {
   withScriptLock((ui) => {
     const result = createSchoolYearInternal_(ui);
-    ui.alert(result.message);
+
+    if (!result.success) {
+      if (result.message === "Operação cancelada pelo usuário.") return;
+      ui.alert(result.message);
+      return;
+    }
+
+    const template = HtmlService.createTemplateFromFile("CreateSchoolYearResultDialog");
+    template.schoolYearLabel = result.data.schoolYearLabel;
+    template.createdClasses = result.data.createdClasses;
+    template.folderUrl = result.data.folderUrl;
+
+    const htmlOutput = template.evaluate().setWidth(400).setHeight(300);
+    ui.showModalDialog(htmlOutput, "Ano letivo criado");
   }, "Já existe uma operação em andamento. Tente novamente em alguns instantes.");
 }
 
@@ -1212,7 +1223,11 @@ function createSchoolYearInternal_(ui) {
   }
 
   const schoolYearLabel = `${SCHOOL_YEAR_LABEL_PREFIX}${yearInput}`;
-  if (schoolYearFolderExists(config, schoolYearLabel)) {
+
+  const rootFolder = DriveApp.getFolderById(config.schoolYearsFolderId);
+  const schoolYearFolderExists = rootFolder.getFoldersByName(schoolYearLabel).hasNext();
+
+  if (schoolYearFolderExists) {
     return {
       success: false,
       message: `O ano letivo "${schoolYearLabel}" já existe. Nenhuma alteração foi feita.`,
@@ -1254,7 +1269,7 @@ function createSchoolYearInternal_(ui) {
   return {
     success: true,
     message: `Ano letivo "${schoolYearLabel}" criado com ${createdClasses.length} turma(s): ${createdClasses.join(", ")}.`,
-    data: { schoolYearLabel, createdClasses },
+    data: { schoolYearLabel, createdClasses, folderUrl: yearFolder.getUrl() },
   };
 }
 
@@ -1619,6 +1634,23 @@ function fillSubjectPlaceholders(body, subjectCode, grades) {
   for (const { suffix, field, format } of SUBJECT_PLACEHOLDER_FIELDS) {
     replacePlaceholder(body, `${subjectCode}_${suffix}`.toLowerCase(), format(grades[field]));
   }
+
+  const status = String(grades["status"] ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (!["aprovado", "reprovado"].includes(status)) return;
+
+  const color = status === "aprovado" ? "#16a34a" : "#dc2626";
+  const formattedValue = formatStatus(grades["status"]); // "APR" ou "REP"
+  const found = body.findText(formattedValue);
+
+  if (!found) return;
+
+  found
+    .getElement()
+    .asText()
+    .setForegroundColor(found.getStartOffset(), found.getEndOffsetInclusive(), color);
 }
 
 // ============================================================
@@ -1681,6 +1713,12 @@ function formatGrade(value) {
     minimumFractionDigits: 1,
     maximumFractionDigits: 2,
   }).format(number);
+}
+
+function formatStatus(status) {
+  if (status === "") return "--";
+
+  return status.slice(0, 3).toUpperCase();
 }
 
 /**
