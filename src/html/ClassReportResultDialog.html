@@ -36,7 +36,7 @@
           </div>
         </header>
 
-        <!-- Aviso de interrupção por timeout — semanticamente diferente de um erro de geração -->
+        <!-- Aviso de interrupção por timeout -->
         <? if (interrupted) { ?>
         <div class="flex items-start space-x-3 rounded-md border border-amber-200 bg-amber-50 p-3">
           <svg
@@ -96,19 +96,10 @@
 
         <!-- Ações -->
         <div class="flex flex-col space-y-2 pt-1">
-          <? if (mergedPdfUrl) { ?>
-          <a
-            href="<?= mergedPdfUrl ?>"
-            target="_blank"
-            class="inline-flex w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
-          >
-            Abrir PDF único da turma
-          </a>
-          <? } ?>
           <a
             href="<?= pdfFolderUrl ?>"
             target="_blank"
-            class="inline-flex w-full items-center justify-center rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
+            class="inline-flex w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
           >
             Abrir pasta no Drive
           </a>

@@ -41,33 +41,6 @@
         </select>
       </div>
 
-      <!-- Formato de saída — apenas no modo "class" -->
-      <template x-if="actionType === 'class'">
-        <div>
-          <label class="mb-1 block text-xs font-medium tracking-wider text-slate-500 uppercase">
-            Formato de saída
-          </label>
-          <div class="flex overflow-hidden rounded-md border border-slate-200 text-sm shadow-sm">
-            <button
-              type="button"
-              @click="outputMode = 'separate'"
-              :class="outputMode === 'separate' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'"
-              class="flex-1 px-3 py-2 font-medium transition-colors focus:ring-2 focus:ring-slate-400 focus:outline-none focus:ring-inset"
-            >
-              Arquivos separados
-            </button>
-            <button
-              type="button"
-              @click="outputMode = 'merged'"
-              :class="outputMode === 'merged' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'"
-              class="flex-1 border-l border-slate-200 px-3 py-2 font-medium transition-colors focus:ring-2 focus:ring-slate-400 focus:outline-none focus:ring-inset"
-            >
-              Arquivo único
-            </button>
-          </div>
-        </div>
-      </template>
-
       <!-- Campo de aluno — apenas no modo "single" -->
       <template x-if="actionType === 'single'">
         <div>
@@ -142,7 +115,6 @@
           schoolYear: "<?= years[0] ?>",
           className: "<?= classes[0] ?>",
           studentSearch: "",
-          outputMode: "separate",
           availableStudents: [],
           isLoading: false,
           isFetchingStudents: false,
@@ -155,8 +127,6 @@
           init() {
             if (this.actionType === "single") {
               this.fetchStudents();
-              // Os @change nos selects disparam fetchStudents diretamente,
-              // então os $watch aqui foram removidos para evitar double-fetch.
             }
           },
 
@@ -204,7 +174,7 @@
                   this.error = err.message;
                   this.isLoading = false;
                 })
-                .executeClassReportsGeneration(this.schoolYear, this.className, this.outputMode);
+                .executeClassReportsGeneration(this.schoolYear, this.className);
             }
           },
         };
